@@ -68,6 +68,13 @@ async function initDb() {
       added_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(pack_id, user_id)
     );
+    CREATE TABLE IF NOT EXISTS pack_downloads (
+      id SERIAL PRIMARY KEY,
+      pack_id INTEGER REFERENCES packs(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      downloaded_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(pack_id, user_id)
+    );
   `)
   await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS sync_token VARCHAR(255) UNIQUE;
@@ -536,7 +543,7 @@ app.get('/api/packs/browse', async (req, res) => {
 })
 
 // GET /api/words/:token — consumed by watch/phone app (public, no auth)
-app.get('/api/words/:token', async (req, res) => {
+app.get('/api/words/:token', optionalAuth, async (req, res) => {
   try {
     const { token } = req.params
     const pack = await pool.query(`
@@ -546,15 +553,26 @@ app.get('/api/words/:token', async (req, res) => {
     `, [token])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
 
-    // Increment download count
-    await pool.query('UPDATE packs SET download_count = download_count + 1 WHERE token = $1', [token])
+    const packId = pack.rows[0].id
+    const userId = req.user?.id
+
+    // Only increment if this user hasn't downloaded this pack before
+    let downloadCount = pack.rows[0].download_count || 0
+    if (userId) {
+      const existing = await pool.query('SELECT id FROM pack_downloads WHERE pack_id = $1 AND user_id = $2', [packId, userId])
+      if (existing.rows.length === 0) {
+        await pool.query('INSERT INTO pack_downloads (pack_id, user_id) VALUES ($1, $2)', [packId, userId])
+        await pool.query('UPDATE packs SET download_count = download_count + 1 WHERE token = $1', [token])
+        downloadCount++
+      }
+    }
 
     const words = await pool.query(
       'SELECT question, answer, reading, audio FROM words WHERE pack_id = $1 AND enabled = true ORDER BY id',
-      [pack.rows[0].id]
+      [packId]
     )
     const p = pack.rows[0]
-    res.json({ name: p.name, updated_at: p.updated_at, question_lang: p.question_lang || '', answer_lang: p.answer_lang || '', author: p.author || '', download_count: (p.download_count || 0) + 1, words: words.rows })
+    res.json({ name: p.name, updated_at: p.updated_at, question_lang: p.question_lang || '', answer_lang: p.answer_lang || '', author: p.author || '', download_count: downloadCount, words: words.rows })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
