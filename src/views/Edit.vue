@@ -37,19 +37,23 @@
         <div v-for="(word, i) in words" :key="i"
           class="bg-surface rounded-lg p-4 border border-border space-y-3">
           <div class="flex items-center justify-between">
-            <span class="text-sm text-text-muted">Word {{ i + 1 }}</span>
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" v-model="word.enabled"
+                class="w-4 h-4 accent-primary rounded" />
+              <span class="text-sm" :class="word.enabled ? 'text-text-muted' : 'text-text-muted/50'">Word {{ i + 1 }}</span>
+            </label>
             <button v-if="words.length > 1" type="button" @click="removeWord(i)"
               class="text-danger hover:text-red-300 text-sm transition-colors">Remove</button>
           </div>
-          <div class="grid gap-3 sm:grid-cols-3">
+          <div class="grid gap-3 sm:grid-cols-3" :class="{ 'opacity-40 pointer-events-none': !word.enabled }">
             <div>
               <label class="text-xs text-text-muted block mb-1">Question</label>
-              <input v-model="word.question" required
+              <input v-model="word.question" :required="word.enabled"
                 class="w-full bg-bg border border-border rounded px-3 py-2 text-text focus:border-primary transition-colors" />
             </div>
             <div>
               <label class="text-xs text-text-muted block mb-1">Answer</label>
-              <input v-model="word.answer" required
+              <input v-model="word.answer" :required="word.enabled"
                 class="w-full bg-bg border border-border rounded px-3 py-2 text-text focus:border-primary transition-colors" />
             </div>
             <div>
@@ -109,6 +113,7 @@ interface Word {
   question: string
   answer: string
   reading: string
+  enabled: boolean
 }
 
 const route = useRoute()
@@ -135,7 +140,7 @@ async function loadPack() {
   error.value = ''
   loading.value = true
   try {
-    const res = await fetch(`/api/words/${tokenInput.value}`)
+    const res = await fetch(`/api/packs/${tokenInput.value}/edit`)
     if (!res.ok) throw new Error('Pack not found')
     const data = await res.json()
     name.value = data.name || ''
@@ -152,7 +157,7 @@ function doImport() {
   const lines = importText.value.split('\n').filter(l => l.trim())
   const parsed = lines.map(line => {
     const [question, answer, reading] = line.split('|').map(s => s.trim())
-    return { question: question || '', answer: answer || '', reading: reading || '' }
+    return { question: question || '', answer: answer || '', reading: reading || '', enabled: true }
   }).filter(w => w.question && w.answer)
   if (parsed.length === 0) return
   words.value.push(...parsed)
@@ -161,7 +166,7 @@ function doImport() {
 }
 
 function addWord() {
-  words.value.push({ question: '', answer: '', reading: '' })
+  words.value.push({ question: '', answer: '', reading: '', enabled: true })
 }
 
 function removeWord(i: number) {

@@ -31,13 +31,15 @@ async function initDb() {
       pack_id INTEGER REFERENCES packs(id) ON DELETE CASCADE,
       question TEXT NOT NULL,
       answer TEXT NOT NULL,
-      reading TEXT DEFAULT ''
+      reading TEXT DEFAULT '',
+      enabled BOOLEAN DEFAULT TRUE
     );
   `)
   // Add columns if missing (migration for existing DBs)
   await pool.query(`
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE words ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE;
   `).catch(() => {})
 }
 
@@ -76,7 +78,25 @@ app.get('/api/words/:token', async (req, res) => {
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
 
     const words = await pool.query(
-      'SELECT question, answer, reading FROM words WHERE pack_id = $1 ORDER BY id',
+      'SELECT question, answer, reading FROM words WHERE pack_id = $1 AND enabled = true ORDER BY id',
+      [pack.rows[0].id]
+    )
+    res.json({ name: pack.rows[0].name, updated_at: pack.rows[0].updated_at, words: words.rows })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/packs/:token/edit — all words including disabled, for the editor
+app.get('/api/packs/:token/edit', async (req, res) => {
+  try {
+    const { token } = req.params
+    const pack = await pool.query('SELECT id, name, updated_at FROM packs WHERE token = $1', [token])
+    if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
+
+    const words = await pool.query(
+      'SELECT question, answer, reading, enabled FROM words WHERE pack_id = $1 ORDER BY id',
       [pack.rows[0].id]
     )
     res.json({ name: pack.rows[0].name, updated_at: pack.rows[0].updated_at, words: words.rows })
@@ -90,20 +110,32 @@ app.get('/api/words/:token', async (req, res) => {
 app.post('/api/packs', async (req, res) => {
   const client = await pool.connect()
   try {
-    const { name, words } = req.body
+    const { name, words, token: customToken } = req.body
     if (!words || !Array.isArray(words) || words.length === 0) {
       return res.status(400).json({ error: 'Words array is required' })
     }
 
-    const token = await generateToken()
+    let token
+    if (customToken) {
+      if (!/^\d{4}$/.test(customToken)) {
+        return res.status(400).json({ error: 'Code must be exactly 4 digits' })
+      }
+      const existing = await pool.query('SELECT 1 FROM packs WHERE token = $1', [customToken])
+      if (existing.rows.length > 0) {
+        return res.status(409).json({ error: 'That code is already in use' })
+      }
+      token = customToken
+    } else {
+      token = await generateToken()
+    }
     await client.query('BEGIN')
     const pack = await client.query('INSERT INTO packs (token, name) VALUES ($1, $2) RETURNING id', [token, name || ''])
     const packId = pack.rows[0].id
 
     for (const word of words) {
       await client.query(
-        'INSERT INTO words (pack_id, question, answer, reading) VALUES ($1, $2, $3, $4)',
-        [packId, word.question, word.answer, word.reading || '']
+        'INSERT INTO words (pack_id, question, answer, reading, enabled) VALUES ($1, $2, $3, $4, $5)',
+        [packId, word.question, word.answer, word.reading || '', word.enabled !== false]
       )
     }
 
@@ -138,8 +170,8 @@ app.put('/api/packs/:token', async (req, res) => {
 
     for (const word of words) {
       await client.query(
-        'INSERT INTO words (pack_id, question, answer, reading) VALUES ($1, $2, $3, $4)',
-        [packId, word.question, word.answer, word.reading || '']
+        'INSERT INTO words (pack_id, question, answer, reading, enabled) VALUES ($1, $2, $3, $4, $5)',
+        [packId, word.question, word.answer, word.reading || '', word.enabled !== false]
       )
     }
 
