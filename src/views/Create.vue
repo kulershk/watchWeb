@@ -18,6 +18,12 @@
     </div>
 
     <form v-else @submit.prevent="submit" class="space-y-4">
+      <div class="bg-surface rounded-lg p-4 border border-border">
+        <label class="text-xs text-text-muted block mb-1">Pack Name</label>
+        <input v-model="name" required placeholder="JLPT N5 Vocabulary"
+          class="w-full bg-bg border border-border rounded px-3 py-2 text-text placeholder-text-muted/40 focus:border-primary transition-colors" />
+      </div>
+
       <div v-for="(word, i) in words" :key="i"
         class="bg-surface rounded-lg p-4 border border-border space-y-3">
         <div class="flex items-center justify-between">
@@ -68,6 +74,7 @@ interface Word {
   reading: string
 }
 
+const name = ref('')
 const words = ref<Word[]>([{ question: '', answer: '', reading: '' }])
 const createdToken = ref('')
 const error = ref('')
@@ -82,6 +89,7 @@ function removeWord(i: number) {
 }
 
 function resetForm() {
+  name.value = ''
   words.value = [{ question: '', answer: '', reading: '' }]
   createdToken.value = ''
   error.value = ''
@@ -94,7 +102,7 @@ async function submit() {
     const res = await fetch('/api/packs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ words: words.value }),
+      body: JSON.stringify({ name: name.value, words: words.value }),
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))

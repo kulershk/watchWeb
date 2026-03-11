@@ -22,7 +22,9 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS packs (
       id SERIAL PRIMARY KEY,
       token VARCHAR(4) UNIQUE NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      name TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS words (
       id SERIAL PRIMARY KEY,
@@ -32,6 +34,11 @@ async function initDb() {
       reading TEXT DEFAULT ''
     );
   `)
+  // Add columns if missing (migration for existing DBs)
+  await pool.query(`
+    ALTER TABLE packs ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
+    ALTER TABLE packs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+  `).catch(() => {})
 }
 
 // Generate unique 4-digit token
@@ -48,11 +55,11 @@ async function generateToken() {
 app.get('/api/packs', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT p.token, p.created_at, COUNT(w.id)::int AS word_count
+      SELECT p.token, p.name, p.created_at, p.updated_at, COUNT(w.id)::int AS word_count
       FROM packs p
       LEFT JOIN words w ON w.pack_id = p.id
       GROUP BY p.id
-      ORDER BY p.created_at DESC
+      ORDER BY p.updated_at DESC
     `)
     res.json(result.rows)
   } catch (err) {
@@ -65,14 +72,14 @@ app.get('/api/packs', async (req, res) => {
 app.get('/api/words/:token', async (req, res) => {
   try {
     const { token } = req.params
-    const pack = await pool.query('SELECT id FROM packs WHERE token = $1', [token])
+    const pack = await pool.query('SELECT id, name, updated_at FROM packs WHERE token = $1', [token])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
 
     const words = await pool.query(
       'SELECT question, answer, reading FROM words WHERE pack_id = $1 ORDER BY id',
       [pack.rows[0].id]
     )
-    res.json({ words: words.rows })
+    res.json({ name: pack.rows[0].name, updated_at: pack.rows[0].updated_at, words: words.rows })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
@@ -83,14 +90,14 @@ app.get('/api/words/:token', async (req, res) => {
 app.post('/api/packs', async (req, res) => {
   const client = await pool.connect()
   try {
-    const { words } = req.body
+    const { name, words } = req.body
     if (!words || !Array.isArray(words) || words.length === 0) {
       return res.status(400).json({ error: 'Words array is required' })
     }
 
     const token = await generateToken()
     await client.query('BEGIN')
-    const pack = await client.query('INSERT INTO packs (token) VALUES ($1) RETURNING id', [token])
+    const pack = await client.query('INSERT INTO packs (token, name) VALUES ($1, $2) RETURNING id', [token, name || ''])
     const packId = pack.rows[0].id
 
     for (const word of words) {
@@ -116,7 +123,7 @@ app.put('/api/packs/:token', async (req, res) => {
   const client = await pool.connect()
   try {
     const { token } = req.params
-    const { words } = req.body
+    const { name, words } = req.body
     if (!words || !Array.isArray(words) || words.length === 0) {
       return res.status(400).json({ error: 'Words array is required' })
     }
@@ -126,6 +133,7 @@ app.put('/api/packs/:token', async (req, res) => {
 
     const packId = pack.rows[0].id
     await client.query('BEGIN')
+    await client.query('UPDATE packs SET name = $1, updated_at = NOW() WHERE id = $2', [name || '', packId])
     await client.query('DELETE FROM words WHERE pack_id = $1', [packId])
 
     for (const word of words) {

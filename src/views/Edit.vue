@@ -28,6 +28,12 @@
       </div>
 
       <form @submit.prevent="savePack" class="space-y-4">
+        <div class="bg-surface rounded-lg p-4 border border-border">
+          <label class="text-xs text-text-muted block mb-1">Pack Name</label>
+          <input v-model="name" required
+            class="w-full bg-bg border border-border rounded px-3 py-2 text-text focus:border-primary transition-colors" />
+        </div>
+
         <div v-for="(word, i) in words" :key="i"
           class="bg-surface rounded-lg p-4 border border-border space-y-3">
           <div class="flex items-center justify-between">
@@ -89,6 +95,7 @@ interface Word {
 
 const route = useRoute()
 const tokenInput = ref('')
+const name = ref('')
 const words = ref<Word[]>([])
 const loaded = ref(false)
 const loading = ref(false)
@@ -111,6 +118,7 @@ async function loadPack() {
     const res = await fetch(`/api/words/${tokenInput.value}`)
     if (!res.ok) throw new Error('Pack not found')
     const data = await res.json()
+    name.value = data.name || ''
     words.value = data.words
     loaded.value = true
   } catch (e: any) {
@@ -130,6 +138,7 @@ function removeWord(i: number) {
 
 function reset() {
   loaded.value = false
+  name.value = ''
   words.value = []
   error.value = ''
   saved.value = false
@@ -144,7 +153,7 @@ async function savePack() {
     const res = await fetch(`/api/packs/${tokenInput.value}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ words: words.value }),
+      body: JSON.stringify({ name: name.value, words: words.value }),
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))

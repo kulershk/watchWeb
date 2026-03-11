@@ -17,9 +17,14 @@
         class="flex items-center justify-between bg-surface hover:bg-surface-light border border-border rounded-lg p-4 transition-colors">
         <div class="flex items-center gap-4">
           <span class="font-mono text-accent font-bold text-lg tracking-widest">{{ pack.token }}</span>
-          <span class="text-text-muted text-sm">{{ pack.word_count }} words</span>
+          <div>
+            <div class="text-text text-sm font-medium">{{ pack.name || 'Unnamed pack' }}</div>
+            <div class="text-text-muted text-xs">{{ pack.word_count }} words</div>
+          </div>
         </div>
-        <span class="text-text-muted text-xs">{{ formatDate(pack.created_at) }}</span>
+        <div class="text-right text-xs text-text-muted">
+          <div>Updated {{ formatDate(pack.updated_at) }}</div>
+        </div>
       </router-link>
     </div>
   </div>
@@ -30,7 +35,9 @@ import { ref, onMounted } from 'vue'
 
 interface Pack {
   token: string
+  name: string
   created_at: string
+  updated_at: string
   word_count: number
 }
 
