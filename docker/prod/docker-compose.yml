@@ -24,6 +24,8 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://watch:watch@watch-db:5432/watch
+      - JWT_SECRET=${JWT_SECRET:-change-this-to-a-random-secret}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
     volumes:
       - ../../server/uploads:/app/server/uploads
     depends_on:
