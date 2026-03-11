@@ -35,6 +35,7 @@ async function initDb() {
       password_hash VARCHAR(255),
       google_id VARCHAR(255) UNIQUE,
       display_name TEXT DEFAULT '',
+      sync_token VARCHAR(255) UNIQUE,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS packs (
@@ -58,6 +59,7 @@ async function initDb() {
     );
   `)
   await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS sync_token VARCHAR(255) UNIQUE;
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
@@ -199,6 +201,105 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' })
     const user = result.rows[0]
     res.json({ id: user.id, email: user.email, displayName: user.display_name })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// ============ WATCH PAIRING ============
+
+// Store pairing codes in memory (they expire quickly)
+const pairingCodes = new Map() // code -> { userId, syncToken, expiresAt }
+
+// POST /api/watch/pair-code — phone requests a temporary pairing code
+app.post('/api/watch/pair-code', authenticateToken, async (req, res) => {
+  try {
+    // Generate a sync token (permanent) for this user if not already stored
+    let result = await pool.query('SELECT sync_token FROM users WHERE id = $1', [req.user.userId])
+    let syncToken = result.rows[0]?.sync_token
+
+    if (!syncToken) {
+      syncToken = crypto.randomUUID()
+      await pool.query('UPDATE users SET sync_token = $1 WHERE id = $2', [syncToken, req.user.userId])
+    }
+
+    // Generate temporary 6-digit code
+    let code
+    for (let i = 0; i < 100; i++) {
+      code = String(Math.floor(Math.random() * 1000000)).padStart(6, '0')
+      if (!pairingCodes.has(code)) break
+    }
+
+    pairingCodes.set(code, {
+      userId: req.user.userId,
+      syncToken,
+      expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes
+    })
+
+    // Clean up expired codes
+    for (const [k, v] of pairingCodes) {
+      if (v.expiresAt < Date.now()) pairingCodes.delete(k)
+    }
+
+    res.json({ code, expiresIn: 300 })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/watch/pair — watch submits pairing code, gets permanent sync token
+app.post('/api/watch/pair', async (req, res) => {
+  try {
+    const { code } = req.body
+    if (!code) return res.status(400).json({ error: 'Code required' })
+
+    const pairing = pairingCodes.get(code)
+    if (!pairing) return res.status(404).json({ error: 'Invalid code' })
+    if (pairing.expiresAt < Date.now()) {
+      pairingCodes.delete(code)
+      return res.status(410).json({ error: 'Code expired' })
+    }
+
+    pairingCodes.delete(code)
+    res.json({ syncToken: pairing.syncToken })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/watch/sync/:syncToken — watch fetches all user's packs
+app.get('/api/watch/sync/:syncToken', async (req, res) => {
+  try {
+    const { syncToken } = req.params
+    const user = await pool.query('SELECT id FROM users WHERE sync_token = $1', [syncToken])
+    if (user.rows.length === 0) return res.status(401).json({ error: 'Invalid sync token' })
+
+    const userId = user.rows[0].id
+    const packsResult = await pool.query(`
+      SELECT p.token, p.name, p.updated_at
+      FROM packs p
+      WHERE p.user_id = $1
+      ORDER BY p.updated_at DESC
+    `, [userId])
+
+    const packs = []
+    for (const pack of packsResult.rows) {
+      const words = await pool.query(
+        'SELECT question, answer, reading, audio FROM words WHERE pack_id = (SELECT id FROM packs WHERE token = $1) AND enabled = true ORDER BY id',
+        [pack.token]
+      )
+      packs.push({
+        token: pack.token,
+        name: pack.name,
+        updated_at: pack.updated_at,
+        words: words.rows
+      })
+    }
+
+    res.json({ packs })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
