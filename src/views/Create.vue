@@ -62,20 +62,8 @@
               class="w-full bg-bg border border-border rounded px-3 py-2 text-text placeholder-text-muted/40 focus:border-primary transition-colors" />
           </div>
         </div>
-        <div class="flex items-center gap-2" :class="{ 'opacity-40 pointer-events-none': !word.enabled }">
-          <label class="text-xs text-text-muted">Audio</label>
-          <template v-if="word.audio">
-            <button type="button" @click="playAudio(word.audio)"
-              class="text-xs bg-accent/20 text-accent hover:bg-accent/30 px-2 py-1 rounded transition-colors">Play</button>
-            <button type="button" @click="removeAudio(i)"
-              class="text-xs text-danger hover:text-red-300 transition-colors">Remove</button>
-          </template>
-          <template v-else>
-            <button v-if="recordingIndex !== i" type="button" @click="startRecording(i)"
-              class="text-xs bg-danger/20 text-danger hover:bg-danger/30 px-2 py-1 rounded transition-colors">Record</button>
-            <button v-else type="button" @click="stopRecording()"
-              class="text-xs bg-danger text-bg px-2 py-1 rounded animate-pulse transition-colors">Stop</button>
-          </template>
+        <div :class="{ 'opacity-40 pointer-events-none': !word.enabled }">
+          <AudioRecorder v-model="word.audio" @remove="removeAudio(i)" @error="e => error = e" />
         </div>
       </div>
 
@@ -114,6 +102,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import AudioRecorder from '../components/AudioRecorder.vue'
 
 interface Word {
   question: string
@@ -132,49 +121,6 @@ const customToken = ref('')
 const useCustomToken = ref(false)
 const showImport = ref(false)
 const importText = ref('')
-const recordingIndex = ref(-1)
-let mediaRecorder: MediaRecorder | null = null
-
-async function startRecording(i: number) {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const chunks: Blob[] = []
-    mediaRecorder = new MediaRecorder(stream)
-    mediaRecorder.ondataavailable = (e) => chunks.push(e.data)
-    mediaRecorder.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop())
-      const blob = new Blob(chunks, { type: mediaRecorder!.mimeType })
-      const reader = new FileReader()
-      reader.onloadend = async () => {
-        const res = await fetch('/api/audio', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: reader.result }),
-        })
-        if (res.ok) {
-          const { filename } = await res.json()
-          words.value[i].audio = filename
-        }
-      }
-      reader.readAsDataURL(blob)
-    }
-    mediaRecorder.start()
-    recordingIndex.value = i
-  } catch {
-    error.value = 'Microphone access denied'
-  }
-}
-
-function stopRecording() {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop()
-  }
-  recordingIndex.value = -1
-}
-
-function playAudio(filename: string) {
-  new Audio(`/api/audio/${filename}`).play()
-}
 
 async function removeAudio(i: number) {
   const filename = words.value[i].audio
@@ -196,7 +142,7 @@ function doImport() {
   const lines = importText.value.split('\n').filter(l => l.trim())
   const parsed = lines.map(line => {
     const [question, answer, reading] = line.split('|').map(s => s.trim())
-    return { question: question || '', answer: answer || '', reading: reading || '', enabled: true }
+    return { question: question || '', answer: answer || '', reading: reading || '', enabled: true, audio: '' }
   }).filter(w => w.question && w.answer)
   if (parsed.length === 0) return
   // Remove empty placeholder row
