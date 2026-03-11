@@ -44,6 +44,23 @@ async function generateToken() {
   throw new Error('Could not generate unique token')
 }
 
+// GET /api/packs — list all packs with word count
+app.get('/api/packs', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT p.token, p.created_at, COUNT(w.id)::int AS word_count
+      FROM packs p
+      LEFT JOIN words w ON w.pack_id = p.id
+      GROUP BY p.id
+      ORDER BY p.created_at DESC
+    `)
+    res.json(result.rows)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // GET /api/words/:token — consumed by the watch app
 app.get('/api/words/:token', async (req, res) => {
   try {
