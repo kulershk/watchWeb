@@ -75,6 +75,14 @@ async function initDb() {
       downloaded_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(pack_id, user_id)
     );
+    CREATE TABLE IF NOT EXISTS pack_ratings (
+      id SERIAL PRIMARY KEY,
+      pack_id INTEGER REFERENCES packs(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(pack_id, user_id)
+    );
   `)
   await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS sync_token VARCHAR(255) UNIQUE;
@@ -507,10 +515,12 @@ app.get('/api/packs/browse', async (req, res) => {
   try {
     const { tag, search } = req.query
     let query = `
-      SELECT p.token, p.name, p.tags, p.question_lang, p.answer_lang, p.download_count, p.updated_at, u.display_name AS author, COUNT(w.id)::int AS word_count
+      SELECT p.token, p.name, p.tags, p.question_lang, p.answer_lang, p.download_count, p.updated_at, u.display_name AS author, COUNT(w.id)::int AS word_count,
+        COALESCE(AVG(pr.rating), 0) AS avg_rating, COUNT(DISTINCT pr.id)::int AS rating_count
       FROM packs p
       LEFT JOIN words w ON w.pack_id = p.id
       LEFT JOIN users u ON u.id = p.user_id
+      LEFT JOIN pack_ratings pr ON pr.pack_id = p.id
       WHERE p.is_public = true
     `
     const params = []
@@ -532,7 +542,7 @@ app.get('/api/packs/browse', async (req, res) => {
       query += ` AND LOWER(p.answer_lang) = LOWER($${params.length})`
     }
 
-    query += ` GROUP BY p.id, u.display_name ORDER BY p.updated_at DESC LIMIT 50`
+    query += ` GROUP BY p.id, u.display_name ORDER BY COALESCE(AVG(pr.rating), 0) DESC, p.updated_at DESC LIMIT 50`
 
     const result = await pool.query(query, params)
     res.json(result.rows)
@@ -718,6 +728,57 @@ app.delete('/api/packs/:token', authenticateToken, async (req, res) => {
 
     await pool.query('DELETE FROM packs WHERE token = $1', [token])
     res.json({ ok: true })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/packs/:token/rate — rate a pack (1-5 stars)
+app.post('/api/packs/:token/rate', authenticateToken, async (req, res) => {
+  try {
+    const { token } = req.params
+    const { rating } = req.body
+    if (!rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'Rating must be 1-5' })
+
+    const pack = await pool.query('SELECT id FROM packs WHERE token = $1', [token])
+    if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
+
+    await pool.query(`
+      INSERT INTO pack_ratings (pack_id, user_id, rating) VALUES ($1, $2, $3)
+      ON CONFLICT (pack_id, user_id) DO UPDATE SET rating = $3
+    `, [pack.rows[0].id, req.user.userId, rating])
+
+    const stats = await pool.query(
+      'SELECT COALESCE(AVG(rating), 0) AS avg_rating, COUNT(*)::int AS rating_count FROM pack_ratings WHERE pack_id = $1',
+      [pack.rows[0].id]
+    )
+    res.json({ avg_rating: parseFloat(stats.rows[0].avg_rating), rating_count: stats.rows[0].rating_count, user_rating: rating })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/packs/:token/rating — get rating info (optional auth to include user's rating)
+app.get('/api/packs/:token/rating', optionalAuth, async (req, res) => {
+  try {
+    const { token } = req.params
+    const pack = await pool.query('SELECT id FROM packs WHERE token = $1', [token])
+    if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
+
+    const stats = await pool.query(
+      'SELECT COALESCE(AVG(rating), 0) AS avg_rating, COUNT(*)::int AS rating_count FROM pack_ratings WHERE pack_id = $1',
+      [pack.rows[0].id]
+    )
+
+    let userRating = 0
+    if (req.user) {
+      const ur = await pool.query('SELECT rating FROM pack_ratings WHERE pack_id = $1 AND user_id = $2', [pack.rows[0].id, req.user.userId])
+      if (ur.rows.length > 0) userRating = ur.rows[0].rating
+    }
+
+    res.json({ avg_rating: parseFloat(stats.rows[0].avg_rating), rating_count: stats.rows[0].rating_count, user_rating: userRating })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
