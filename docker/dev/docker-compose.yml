@@ -1,0 +1,43 @@
+services:
+  watch-app:
+    container_name: watch-dev-app
+    build:
+      context: ../../
+      dockerfile: docker/dev/Dockerfile
+    ports:
+      - "5173:5173"
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=postgresql://watch:watch@watch-dev-db:5432/watch
+    volumes:
+      - ../../src:/app/src
+      - ../../server:/app/server
+      - ../../public:/app/public
+      - ../../index.html:/app/index.html
+      - ../../vite.config.ts:/app/vite.config.ts
+      - ../../tailwind.config.ts:/app/tailwind.config.ts
+      - ../../postcss.config.js:/app/postcss.config.js
+      - ../../tsconfig.json:/app/tsconfig.json
+    depends_on:
+      watch-dev-db:
+        condition: service_healthy
+
+  watch-dev-db:
+    image: postgres:16-alpine
+    container_name: watch-dev-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: watch
+      POSTGRES_USER: watch
+      POSTGRES_PASSWORD: watch
+    volumes:
+      - watch_dev_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U watch"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  watch_dev_pgdata:

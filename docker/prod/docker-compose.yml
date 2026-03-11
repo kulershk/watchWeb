@@ -1,0 +1,59 @@
+services:
+  watch:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=frontend"
+      # HTTP router
+      - "traefik.http.routers.watch-http.rule=Host(`watch.osrs.lv`)"
+      - "traefik.http.routers.watch-http.entrypoints=http"
+      - "traefik.http.routers.watch-http.service=watch"
+      # HTTPS router
+      - "traefik.http.routers.watch.rule=Host(`watch.osrs.lv`)"
+      - "traefik.http.routers.watch.entrypoints=https"
+      - "traefik.http.routers.watch.tls=true"
+      - "traefik.http.routers.watch.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.watch.service=watch"
+      # Service
+      - "traefik.http.services.watch.loadbalancer.server.port=3001"
+    container_name: watch
+    build:
+      context: ../../
+      dockerfile: docker/prod/Dockerfile
+    image: watch_image
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://watch:watch@watch-db:5432/watch
+    depends_on:
+      watch-db:
+        condition: service_healthy
+    networks:
+      frontend:
+      watch-internal:
+
+  watch-db:
+    image: postgres:16-alpine
+    container_name: watch-db
+    restart: always
+    environment:
+      POSTGRES_DB: watch
+      POSTGRES_USER: watch
+      POSTGRES_PASSWORD: watch
+    volumes:
+      - watch_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U watch"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      watch-internal:
+
+volumes:
+  watch_pgdata:
+
+networks:
+  frontend:
+    name: frontend
+    external: true
+  watch-internal:

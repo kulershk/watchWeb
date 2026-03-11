@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/kuler/Desktop/Stuff/watchWeb -type f -name \"*.ts\" -o -name \"*.tsx\" -o -name \"*.vue\" 2>/dev/null | head -20)",
+      "Bash(cd \"C:/Users/kuler/Desktop/Stuff/watchWeb\" && rm -f package-lock.json && npm install)",
+      "Bash(cd \"C:/Users/kuler/Desktop/Stuff/watchWeb\" && npx vite build 2>&1)",
+      "Bash(cd \"C:/Users/kuler/Desktop/Stuff/watchWeb\" && docker compose -f docker/dev/docker-compose.yml up --build -d 2>&1)",
+      "Bash(docker stop:*)"
+    ]
+  }
+}
