@@ -206,6 +206,17 @@ app.put('/api/packs/:token', async (req, res) => {
     const packId = pack.rows[0].id
     await client.query('BEGIN')
     await client.query('UPDATE packs SET name = $1, updated_at = NOW() WHERE id = $2', [name || '', packId])
+
+    // Find old audio files to clean up
+    const oldWords = await client.query('SELECT audio FROM words WHERE pack_id = $1 AND audio IS NOT NULL AND audio != \'\'', [packId])
+    const newAudioFiles = new Set(words.map(w => w.audio).filter(Boolean))
+    for (const oldWord of oldWords.rows) {
+      if (!newAudioFiles.has(oldWord.audio)) {
+        const filePath = join(uploadsDir, oldWord.audio)
+        if (existsSync(filePath)) unlinkSync(filePath)
+      }
+    }
+
     await client.query('DELETE FROM words WHERE pack_id = $1', [packId])
 
     for (const word of words) {
@@ -230,8 +241,17 @@ app.put('/api/packs/:token', async (req, res) => {
 app.delete('/api/packs/:token', async (req, res) => {
   try {
     const { token } = req.params
-    const result = await pool.query('DELETE FROM packs WHERE token = $1', [token])
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Pack not found' })
+    const pack = await pool.query('SELECT id FROM packs WHERE token = $1', [token])
+    if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
+
+    // Delete audio files for all words in the pack
+    const words = await pool.query('SELECT audio FROM words WHERE pack_id = $1 AND audio IS NOT NULL AND audio != \'\'', [pack.rows[0].id])
+    for (const word of words.rows) {
+      const filePath = join(uploadsDir, word.audio)
+      if (existsSync(filePath)) unlinkSync(filePath)
+    }
+
+    await pool.query('DELETE FROM packs WHERE token = $1', [token])
     res.json({ ok: true })
   } catch (err) {
     console.error(err)
