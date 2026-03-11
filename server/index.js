@@ -1,16 +1,20 @@
 import express from 'express'
 import cors from 'cors'
 import pg from 'pg'
-import { resolve, dirname } from 'path'
+import crypto from 'crypto'
+import { resolve, dirname, join } from 'path'
 import { fileURLToPath } from 'url'
-import { existsSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
 const PORT = 3001
 
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
+
+const uploadsDir = join(__dirname, 'uploads')
+if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true })
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://watch:watch@localhost:5432/watch',
@@ -32,7 +36,8 @@ async function initDb() {
       question TEXT NOT NULL,
       answer TEXT NOT NULL,
       reading TEXT DEFAULT '',
-      enabled BOOLEAN DEFAULT TRUE
+      enabled BOOLEAN DEFAULT TRUE,
+      audio VARCHAR(255) DEFAULT ''
     );
   `)
   // Add columns if missing (migration for existing DBs)
@@ -40,6 +45,7 @@ async function initDb() {
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
     ALTER TABLE words ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE;
+    ALTER TABLE words ADD COLUMN IF NOT EXISTS audio VARCHAR(255) DEFAULT '';
   `).catch(() => {})
 }
 
@@ -52,6 +58,40 @@ async function generateToken() {
   }
   throw new Error('Could not generate unique token')
 }
+
+// POST /api/audio — upload audio, returns filename
+app.post('/api/audio', (req, res) => {
+  try {
+    const { data } = req.body
+    if (!data) return res.status(400).json({ error: 'No audio data' })
+    // data is base64-encoded audio (e.g. "data:audio/webm;codecs=opus;base64,...")
+    const match = data.match(/^data:(audio\/[^;]+)[^,]*;base64,(.+)$/)
+    if (!match) return res.status(400).json({ error: 'Invalid audio format' })
+    const mime = match[1]
+    const ext = mime.includes('webm') ? 'webm' : mime.includes('mp4') ? 'mp4' : mime.includes('ogg') ? 'ogg' : 'wav'
+    const buffer = Buffer.from(match[2], 'base64')
+    const filename = crypto.randomUUID() + '.' + ext
+    writeFileSync(join(uploadsDir, filename), buffer)
+    res.json({ filename })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Upload failed' })
+  }
+})
+
+// GET /api/audio/:filename — serve audio file
+app.get('/api/audio/:filename', (req, res) => {
+  const filePath = join(uploadsDir, req.params.filename)
+  if (!existsSync(filePath)) return res.status(404).json({ error: 'Not found' })
+  res.sendFile(filePath)
+})
+
+// DELETE /api/audio/:filename — delete audio file
+app.delete('/api/audio/:filename', (req, res) => {
+  const filePath = join(uploadsDir, req.params.filename)
+  if (existsSync(filePath)) unlinkSync(filePath)
+  res.json({ ok: true })
+})
 
 // GET /api/packs — list all packs with word count
 app.get('/api/packs', async (req, res) => {
@@ -78,7 +118,7 @@ app.get('/api/words/:token', async (req, res) => {
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
 
     const words = await pool.query(
-      'SELECT question, answer, reading FROM words WHERE pack_id = $1 AND enabled = true ORDER BY id',
+      'SELECT question, answer, reading, audio FROM words WHERE pack_id = $1 AND enabled = true ORDER BY id',
       [pack.rows[0].id]
     )
     res.json({ name: pack.rows[0].name, updated_at: pack.rows[0].updated_at, words: words.rows })
@@ -96,7 +136,7 @@ app.get('/api/packs/:token/edit', async (req, res) => {
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
 
     const words = await pool.query(
-      'SELECT question, answer, reading, enabled FROM words WHERE pack_id = $1 ORDER BY id',
+      'SELECT question, answer, reading, enabled, audio FROM words WHERE pack_id = $1 ORDER BY id',
       [pack.rows[0].id]
     )
     res.json({ name: pack.rows[0].name, updated_at: pack.rows[0].updated_at, words: words.rows })
@@ -134,8 +174,8 @@ app.post('/api/packs', async (req, res) => {
 
     for (const word of words) {
       await client.query(
-        'INSERT INTO words (pack_id, question, answer, reading, enabled) VALUES ($1, $2, $3, $4, $5)',
-        [packId, word.question, word.answer, word.reading || '', word.enabled !== false]
+        'INSERT INTO words (pack_id, question, answer, reading, enabled, audio) VALUES ($1, $2, $3, $4, $5, $6)',
+        [packId, word.question, word.answer, word.reading || '', word.enabled !== false, word.audio || '']
       )
     }
 
@@ -170,8 +210,8 @@ app.put('/api/packs/:token', async (req, res) => {
 
     for (const word of words) {
       await client.query(
-        'INSERT INTO words (pack_id, question, answer, reading, enabled) VALUES ($1, $2, $3, $4, $5)',
-        [packId, word.question, word.answer, word.reading || '', word.enabled !== false]
+        'INSERT INTO words (pack_id, question, answer, reading, enabled, audio) VALUES ($1, $2, $3, $4, $5, $6)',
+        [packId, word.question, word.answer, word.reading || '', word.enabled !== false, word.audio || '']
       )
     }
 
