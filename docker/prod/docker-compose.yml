@@ -24,6 +24,8 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://watch:watch@watch-db:5432/watch
+    volumes:
+      - watch_uploads:/app/server/uploads
     depends_on:
       watch-db:
         condition: service_healthy
@@ -51,6 +53,7 @@ services:
 
 volumes:
   watch_pgdata:
+  watch_uploads:
 
 networks:
   frontend:
