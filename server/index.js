@@ -42,6 +42,8 @@ async function initDb() {
       token VARCHAR(4) UNIQUE NOT NULL,
       name TEXT DEFAULT '',
       user_id INTEGER REFERENCES users(id),
+      is_public BOOLEAN DEFAULT FALSE,
+      tags TEXT DEFAULT '',
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -59,6 +61,8 @@ async function initDb() {
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
+    ALTER TABLE packs ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE;
+    ALTER TABLE packs ADD COLUMN IF NOT EXISTS tags TEXT DEFAULT '';
     ALTER TABLE words ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE;
     ALTER TABLE words ADD COLUMN IF NOT EXISTS audio VARCHAR(255) DEFAULT '';
   `).catch(() => {})
@@ -242,13 +246,45 @@ app.delete('/api/audio/:filename', authenticateToken, (req, res) => {
 app.get('/api/packs', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT p.token, p.name, p.created_at, p.updated_at, COUNT(w.id)::int AS word_count
+      SELECT p.token, p.name, p.is_public, p.tags, p.created_at, p.updated_at, COUNT(w.id)::int AS word_count
       FROM packs p
       LEFT JOIN words w ON w.pack_id = p.id
       WHERE p.user_id = $1
       GROUP BY p.id
       ORDER BY p.updated_at DESC
     `, [req.user.userId])
+    res.json(result.rows)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/packs/browse — browse public packs
+app.get('/api/packs/browse', async (req, res) => {
+  try {
+    const { tag, search } = req.query
+    let query = `
+      SELECT p.token, p.name, p.tags, p.updated_at, u.display_name AS author, COUNT(w.id)::int AS word_count
+      FROM packs p
+      LEFT JOIN words w ON w.pack_id = p.id
+      LEFT JOIN users u ON u.id = p.user_id
+      WHERE p.is_public = true
+    `
+    const params = []
+
+    if (tag) {
+      params.push(`%${tag}%`)
+      query += ` AND LOWER(p.tags) LIKE LOWER($${params.length})`
+    }
+    if (search) {
+      params.push(`%${search}%`)
+      query += ` AND LOWER(p.name) LIKE LOWER($${params.length})`
+    }
+
+    query += ` GROUP BY p.id, u.display_name ORDER BY p.updated_at DESC LIMIT 50`
+
+    const result = await pool.query(query, params)
     res.json(result.rows)
   } catch (err) {
     console.error(err)
@@ -278,7 +314,7 @@ app.get('/api/words/:token', async (req, res) => {
 app.get('/api/packs/:token/edit', authenticateToken, async (req, res) => {
   try {
     const { token } = req.params
-    const pack = await pool.query('SELECT id, name, updated_at, user_id FROM packs WHERE token = $1', [token])
+    const pack = await pool.query('SELECT id, name, is_public, tags, updated_at, user_id FROM packs WHERE token = $1', [token])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id && pack.rows[0].user_id !== req.user.userId) {
       return res.status(403).json({ error: 'Not your pack' })
@@ -288,7 +324,7 @@ app.get('/api/packs/:token/edit', authenticateToken, async (req, res) => {
       'SELECT question, answer, reading, enabled, audio FROM words WHERE pack_id = $1 ORDER BY id',
       [pack.rows[0].id]
     )
-    res.json({ name: pack.rows[0].name, updated_at: pack.rows[0].updated_at, words: words.rows })
+    res.json({ name: pack.rows[0].name, is_public: pack.rows[0].is_public, tags: pack.rows[0].tags || '', updated_at: pack.rows[0].updated_at, words: words.rows })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
@@ -299,7 +335,7 @@ app.get('/api/packs/:token/edit', authenticateToken, async (req, res) => {
 app.post('/api/packs', authenticateToken, async (req, res) => {
   const client = await pool.connect()
   try {
-    const { name, words, token: customToken } = req.body
+    const { name, words, token: customToken, is_public, tags } = req.body
     if (!words || !Array.isArray(words) || words.length === 0) {
       return res.status(400).json({ error: 'Words array is required' })
     }
@@ -319,8 +355,8 @@ app.post('/api/packs', authenticateToken, async (req, res) => {
     }
     await client.query('BEGIN')
     const pack = await client.query(
-      'INSERT INTO packs (token, name, user_id) VALUES ($1, $2, $3) RETURNING id',
-      [token, name || '', req.user.userId]
+      'INSERT INTO packs (token, name, user_id, is_public, tags) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [token, name || '', req.user.userId, is_public || false, tags || '']
     )
     const packId = pack.rows[0].id
 
@@ -347,7 +383,7 @@ app.put('/api/packs/:token', authenticateToken, async (req, res) => {
   const client = await pool.connect()
   try {
     const { token } = req.params
-    const { name, words } = req.body
+    const { name, words, is_public, tags } = req.body
     if (!words || !Array.isArray(words) || words.length === 0) {
       return res.status(400).json({ error: 'Words array is required' })
     }
@@ -360,7 +396,7 @@ app.put('/api/packs/:token', authenticateToken, async (req, res) => {
 
     const packId = pack.rows[0].id
     await client.query('BEGIN')
-    await client.query('UPDATE packs SET name = $1, updated_at = NOW() WHERE id = $2', [name || '', packId])
+    await client.query('UPDATE packs SET name = $1, is_public = $2, tags = $3, updated_at = NOW() WHERE id = $4', [name || '', is_public || false, tags || '', packId])
 
     // Find old audio files to clean up
     const oldWords = await client.query('SELECT audio FROM words WHERE pack_id = $1 AND audio IS NOT NULL AND audio != \'\'', [packId])
