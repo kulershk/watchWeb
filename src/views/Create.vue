@@ -55,6 +55,24 @@
         + Add Word
       </button>
 
+      <!-- Import -->
+      <div class="bg-surface rounded-lg p-4 border border-border space-y-2">
+        <div class="flex items-center justify-between">
+          <label class="text-xs text-text-muted">Import (question|answer|reading per line)</label>
+          <button type="button" @click="showImport = !showImport" class="text-xs text-primary hover:text-primary-hover transition-colors">
+            {{ showImport ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+        <template v-if="showImport">
+          <textarea v-model="importText" rows="5" placeholder="犬|dog|いぬ&#10;猫|cat|ねこ&#10;水|water"
+            class="w-full bg-bg border border-border rounded px-3 py-2 text-text text-sm font-mono placeholder-text-muted/40 focus:border-primary transition-colors resize-y" />
+          <button type="button" @click="doImport"
+            class="bg-accent hover:bg-accent-hover text-bg text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+            Import
+          </button>
+        </template>
+      </div>
+
       <p v-if="error" class="text-danger text-sm">{{ error }}</p>
 
       <button type="submit" :disabled="submitting"
@@ -79,6 +97,8 @@ const words = ref<Word[]>([{ question: '', answer: '', reading: '' }])
 const createdToken = ref('')
 const error = ref('')
 const submitting = ref(false)
+const showImport = ref(false)
+const importText = ref('')
 
 function addWord() {
   words.value.push({ question: '', answer: '', reading: '' })
@@ -86,6 +106,23 @@ function addWord() {
 
 function removeWord(i: number) {
   words.value.splice(i, 1)
+}
+
+function doImport() {
+  const lines = importText.value.split('\n').filter(l => l.trim())
+  const parsed = lines.map(line => {
+    const [question, answer, reading] = line.split('|').map(s => s.trim())
+    return { question: question || '', answer: answer || '', reading: reading || '' }
+  }).filter(w => w.question && w.answer)
+  if (parsed.length === 0) return
+  // Remove empty placeholder row
+  if (words.value.length === 1 && !words.value[0].question && !words.value[0].answer) {
+    words.value = parsed
+  } else {
+    words.value.push(...parsed)
+  }
+  importText.value = ''
+  showImport.value = false
 }
 
 function resetForm() {

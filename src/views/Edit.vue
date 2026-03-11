@@ -65,6 +65,24 @@
           + Add Word
         </button>
 
+        <!-- Import -->
+        <div class="bg-surface rounded-lg p-4 border border-border space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="text-xs text-text-muted">Import (question|answer|reading per line)</label>
+            <button type="button" @click="showImport = !showImport" class="text-xs text-primary hover:text-primary-hover transition-colors">
+              {{ showImport ? 'Hide' : 'Show' }}
+            </button>
+          </div>
+          <template v-if="showImport">
+            <textarea v-model="importText" rows="5" placeholder="犬|dog|いぬ&#10;猫|cat|ねこ&#10;水|water"
+              class="w-full bg-bg border border-border rounded px-3 py-2 text-text text-sm font-mono placeholder-text-muted/40 focus:border-primary transition-colors resize-y" />
+            <button type="button" @click="doImport"
+              class="bg-accent hover:bg-accent-hover text-bg text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+              Import
+            </button>
+          </template>
+        </div>
+
         <p v-if="error" class="text-danger text-sm">{{ error }}</p>
         <p v-if="saved" class="text-accent text-sm">Pack saved!</p>
 
@@ -102,6 +120,8 @@ const loading = ref(false)
 const saving = ref(false)
 const saved = ref(false)
 const error = ref('')
+const showImport = ref(false)
+const importText = ref('')
 
 onMounted(() => {
   const t = route.params.token as string
@@ -126,6 +146,18 @@ async function loadPack() {
   } finally {
     loading.value = false
   }
+}
+
+function doImport() {
+  const lines = importText.value.split('\n').filter(l => l.trim())
+  const parsed = lines.map(line => {
+    const [question, answer, reading] = line.split('|').map(s => s.trim())
+    return { question: question || '', answer: answer || '', reading: reading || '' }
+  }).filter(w => w.question && w.answer)
+  if (parsed.length === 0) return
+  words.value.push(...parsed)
+  importText.value = ''
+  showImport.value = false
 }
 
 function addWord() {
