@@ -36,6 +36,7 @@ async function initDb() {
       google_id VARCHAR(255) UNIQUE,
       display_name TEXT DEFAULT '',
       sync_token VARCHAR(255) UNIQUE,
+      friend_code VARCHAR(6) UNIQUE,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS packs (
@@ -47,6 +48,7 @@ async function initDb() {
       tags TEXT DEFAULT '',
       question_lang TEXT DEFAULT '',
       answer_lang TEXT DEFAULT '',
+      download_count INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -59,6 +61,13 @@ async function initDb() {
       enabled BOOLEAN DEFAULT TRUE,
       audio VARCHAR(255) DEFAULT ''
     );
+    CREATE TABLE IF NOT EXISTS pack_collaborators (
+      id SERIAL PRIMARY KEY,
+      pack_id INTEGER REFERENCES packs(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      added_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(pack_id, user_id)
+    );
   `)
   await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS sync_token VARCHAR(255) UNIQUE;
@@ -69,8 +78,10 @@ async function initDb() {
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS tags TEXT DEFAULT '';
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS question_lang TEXT DEFAULT '';
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS answer_lang TEXT DEFAULT '';
+    ALTER TABLE packs ADD COLUMN IF NOT EXISTS download_count INTEGER DEFAULT 0;
     ALTER TABLE words ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE;
     ALTER TABLE words ADD COLUMN IF NOT EXISTS audio VARCHAR(255) DEFAULT '';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_code VARCHAR(6) UNIQUE;
   `).catch(() => {})
 }
 
@@ -111,6 +122,18 @@ async function generateToken() {
   throw new Error('Could not generate unique token')
 }
 
+// Generate unique 6-character friend code
+async function generateFriendCode() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+  for (let attempt = 0; attempt < 100; attempt++) {
+    let code = ''
+    for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)]
+    const existing = await pool.query('SELECT 1 FROM users WHERE friend_code = $1', [code])
+    if (existing.rows.length === 0) return code
+  }
+  throw new Error('Could not generate unique friend code')
+}
+
 // ============ AUTH ROUTES ============
 
 // POST /api/auth/register
@@ -124,13 +147,14 @@ app.post('/api/auth/register', async (req, res) => {
     if (existing.rows.length > 0) return res.status(409).json({ error: 'Email already registered' })
 
     const passwordHash = await bcrypt.hash(password, 12)
+    const friendCode = await generateFriendCode()
     const result = await pool.query(
-      'INSERT INTO users (email, password_hash, display_name) VALUES ($1, $2, $3) RETURNING id, email, display_name',
-      [email.toLowerCase(), passwordHash, displayName || '']
+      'INSERT INTO users (email, password_hash, display_name, friend_code) VALUES ($1, $2, $3, $4) RETURNING id, email, display_name, friend_code',
+      [email.toLowerCase(), passwordHash, displayName || '', friendCode]
     )
     const user = result.rows[0]
     const token = createToken(user)
-    res.json({ token, user: { id: user.id, email: user.email, displayName: user.display_name } })
+    res.json({ token, user: { id: user.id, email: user.email, displayName: user.display_name, friendCode: user.friend_code } })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
@@ -143,7 +167,7 @@ app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' })
 
-    const result = await pool.query('SELECT id, email, password_hash, display_name FROM users WHERE email = $1', [email.toLowerCase()])
+    const result = await pool.query('SELECT id, email, password_hash, display_name, friend_code FROM users WHERE email = $1', [email.toLowerCase()])
     if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid email or password' })
 
     const user = result.rows[0]
@@ -152,8 +176,14 @@ app.post('/api/auth/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash)
     if (!valid) return res.status(401).json({ error: 'Invalid email or password' })
 
+    if (!user.friend_code) {
+      const friendCode = await generateFriendCode()
+      await pool.query('UPDATE users SET friend_code = $1 WHERE id = $2', [friendCode, user.id])
+      user.friend_code = friendCode
+    }
+
     const token = createToken(user)
-    res.json({ token, user: { id: user.id, email: user.email, displayName: user.display_name } })
+    res.json({ token, user: { id: user.id, email: user.email, displayName: user.display_name, friendCode: user.friend_code } })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
@@ -172,26 +202,33 @@ app.post('/api/auth/google', async (req, res) => {
     const { sub: googleId, email, name } = payload
 
     // Check if user exists by google_id
-    let result = await pool.query('SELECT id, email, display_name FROM users WHERE google_id = $1', [googleId])
+    let result = await pool.query('SELECT id, email, display_name, friend_code FROM users WHERE google_id = $1', [googleId])
 
     if (result.rows.length === 0) {
       // Check if user exists by email (registered with password)
-      result = await pool.query('SELECT id, email, display_name FROM users WHERE email = $1', [email.toLowerCase()])
+      result = await pool.query('SELECT id, email, display_name, friend_code FROM users WHERE email = $1', [email.toLowerCase()])
       if (result.rows.length > 0) {
         // Link Google ID to existing account
         await pool.query('UPDATE users SET google_id = $1 WHERE id = $2', [googleId, result.rows[0].id])
       } else {
         // Create new user
+        const friendCode = await generateFriendCode()
         result = await pool.query(
-          'INSERT INTO users (email, google_id, display_name) VALUES ($1, $2, $3) RETURNING id, email, display_name',
-          [email.toLowerCase(), googleId, name || '']
+          'INSERT INTO users (email, google_id, display_name, friend_code) VALUES ($1, $2, $3, $4) RETURNING id, email, display_name, friend_code',
+          [email.toLowerCase(), googleId, name || '', friendCode]
         )
       }
     }
 
     const user = result.rows[0]
+    if (!user.friend_code) {
+      const friendCode = await generateFriendCode()
+      await pool.query('UPDATE users SET friend_code = $1 WHERE id = $2', [friendCode, user.id])
+      user.friend_code = friendCode
+    }
+
     const token = createToken(user)
-    res.json({ token, user: { id: user.id, email: user.email, displayName: user.display_name } })
+    res.json({ token, user: { id: user.id, email: user.email, displayName: user.display_name, friendCode: user.friend_code } })
   } catch (err) {
     console.error(err)
     res.status(401).json({ error: 'Invalid Google token' })
@@ -201,10 +238,99 @@ app.post('/api/auth/google', async (req, res) => {
 // GET /api/auth/me
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, email, display_name FROM users WHERE id = $1', [req.user.userId])
+    const result = await pool.query('SELECT id, email, display_name, friend_code FROM users WHERE id = $1', [req.user.userId])
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' })
     const user = result.rows[0]
-    res.json({ id: user.id, email: user.email, displayName: user.display_name })
+    if (!user.friend_code) {
+      const friendCode = await generateFriendCode()
+      await pool.query('UPDATE users SET friend_code = $1 WHERE id = $2', [friendCode, user.id])
+      user.friend_code = friendCode
+    }
+    res.json({ id: user.id, email: user.email, displayName: user.display_name, friendCode: user.friend_code })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// ============ FRIEND CODE / COLLABORATION ROUTES ============
+
+// GET /api/users/lookup/:friendCode — look up user by friend code
+app.get('/api/users/lookup/:friendCode', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, display_name, email FROM users WHERE friend_code = $1',
+      [req.params.friendCode.toUpperCase()]
+    )
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' })
+    const user = result.rows[0]
+    res.json({ id: user.id, displayName: user.display_name || user.email.split('@')[0] })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/packs/:token/collaborators — list collaborators for a pack (owner only)
+app.get('/api/packs/:token/collaborators', authenticateToken, async (req, res) => {
+  try {
+    const pack = await pool.query('SELECT id, user_id FROM packs WHERE token = $1', [req.params.token])
+    if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
+    if (pack.rows[0].user_id !== req.user.userId) return res.status(403).json({ error: 'Not your pack' })
+
+    const result = await pool.query(`
+      SELECT u.id, u.display_name, u.email, u.friend_code
+      FROM pack_collaborators pc
+      JOIN users u ON u.id = pc.user_id
+      WHERE pc.pack_id = $1
+      ORDER BY pc.added_at
+    `, [pack.rows[0].id])
+
+    res.json(result.rows.map(u => ({
+      id: u.id,
+      displayName: u.display_name || u.email.split('@')[0],
+      friendCode: u.friend_code
+    })))
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/packs/:token/collaborators — add collaborator by friend code (owner only)
+app.post('/api/packs/:token/collaborators', authenticateToken, async (req, res) => {
+  try {
+    const { friend_code } = req.body
+    if (!friend_code) return res.status(400).json({ error: 'Friend code required' })
+
+    const pack = await pool.query('SELECT id, user_id FROM packs WHERE token = $1', [req.params.token])
+    if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
+    if (pack.rows[0].user_id !== req.user.userId) return res.status(403).json({ error: 'Not your pack' })
+
+    const user = await pool.query('SELECT id FROM users WHERE friend_code = $1', [friend_code.toUpperCase()])
+    if (user.rows.length === 0) return res.status(404).json({ error: 'User not found' })
+    if (user.rows[0].id === req.user.userId) return res.status(400).json({ error: 'Cannot add yourself' })
+
+    await pool.query(
+      'INSERT INTO pack_collaborators (pack_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [pack.rows[0].id, user.rows[0].id]
+    )
+    res.json({ ok: true })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// DELETE /api/packs/:token/collaborators/:userId — remove collaborator (owner only)
+app.delete('/api/packs/:token/collaborators/:userId', authenticateToken, async (req, res) => {
+  try {
+    const pack = await pool.query('SELECT id, user_id FROM packs WHERE token = $1', [req.params.token])
+    if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
+    if (pack.rows[0].user_id !== req.user.userId) return res.status(403).json({ error: 'Not your pack' })
+
+    await pool.query('DELETE FROM pack_collaborators WHERE pack_id = $1 AND user_id = $2', [pack.rows[0].id, parseInt(req.params.userId)])
+    res.json({ ok: true })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
@@ -353,10 +479,12 @@ app.delete('/api/audio/:filename', authenticateToken, (req, res) => {
 app.get('/api/packs', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT p.token, p.name, p.is_public, p.tags, p.question_lang, p.answer_lang, p.created_at, p.updated_at, COUNT(w.id)::int AS word_count
+      SELECT p.token, p.name, p.is_public, p.tags, p.question_lang, p.answer_lang, p.download_count, p.created_at, p.updated_at, COUNT(w.id)::int AS word_count,
+        CASE WHEN p.user_id = $1 THEN true ELSE false END AS is_owner
       FROM packs p
       LEFT JOIN words w ON w.pack_id = p.id
-      WHERE p.user_id = $1
+      LEFT JOIN pack_collaborators pc ON pc.pack_id = p.id
+      WHERE p.user_id = $1 OR pc.user_id = $1
       GROUP BY p.id
       ORDER BY p.updated_at DESC
     `, [req.user.userId])
@@ -372,7 +500,7 @@ app.get('/api/packs/browse', async (req, res) => {
   try {
     const { tag, search } = req.query
     let query = `
-      SELECT p.token, p.name, p.tags, p.question_lang, p.answer_lang, p.updated_at, u.display_name AS author, COUNT(w.id)::int AS word_count
+      SELECT p.token, p.name, p.tags, p.question_lang, p.answer_lang, p.download_count, p.updated_at, u.display_name AS author, COUNT(w.id)::int AS word_count
       FROM packs p
       LEFT JOIN words w ON w.pack_id = p.id
       LEFT JOIN users u ON u.id = p.user_id
@@ -411,14 +539,22 @@ app.get('/api/packs/browse', async (req, res) => {
 app.get('/api/words/:token', async (req, res) => {
   try {
     const { token } = req.params
-    const pack = await pool.query('SELECT id, name, updated_at, question_lang, answer_lang FROM packs WHERE token = $1', [token])
+    const pack = await pool.query(`
+      SELECT p.id, p.name, p.updated_at, p.question_lang, p.answer_lang, p.download_count, u.display_name AS author
+      FROM packs p LEFT JOIN users u ON u.id = p.user_id
+      WHERE p.token = $1
+    `, [token])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
+
+    // Increment download count
+    await pool.query('UPDATE packs SET download_count = download_count + 1 WHERE token = $1', [token])
 
     const words = await pool.query(
       'SELECT question, answer, reading, audio FROM words WHERE pack_id = $1 AND enabled = true ORDER BY id',
       [pack.rows[0].id]
     )
-    res.json({ name: pack.rows[0].name, updated_at: pack.rows[0].updated_at, question_lang: pack.rows[0].question_lang || '', answer_lang: pack.rows[0].answer_lang || '', words: words.rows })
+    const p = pack.rows[0]
+    res.json({ name: p.name, updated_at: p.updated_at, question_lang: p.question_lang || '', answer_lang: p.answer_lang || '', author: p.author || '', download_count: (p.download_count || 0) + 1, words: words.rows })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
@@ -432,7 +568,8 @@ app.get('/api/packs/:token/edit', authenticateToken, async (req, res) => {
     const pack = await pool.query('SELECT id, name, is_public, tags, question_lang, answer_lang, updated_at, user_id FROM packs WHERE token = $1', [token])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id && pack.rows[0].user_id !== req.user.userId) {
-      return res.status(403).json({ error: 'Not your pack' })
+      const collab = await pool.query('SELECT 1 FROM pack_collaborators pc JOIN packs p ON p.id = pc.pack_id WHERE p.token = $1 AND pc.user_id = $2', [token, req.user.userId])
+      if (collab.rows.length === 0) return res.status(403).json({ error: 'Not your pack' })
     }
 
     const words = await pool.query(
@@ -506,7 +643,8 @@ app.put('/api/packs/:token', authenticateToken, async (req, res) => {
     const pack = await client.query('SELECT id, user_id FROM packs WHERE token = $1', [token])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id && pack.rows[0].user_id !== req.user.userId) {
-      return res.status(403).json({ error: 'Not your pack' })
+      const collab = await client.query('SELECT 1 FROM pack_collaborators pc JOIN packs p ON p.id = pc.pack_id WHERE p.token = $1 AND pc.user_id = $2', [token, req.user.userId])
+      if (collab.rows.length === 0) return res.status(403).json({ error: 'Not your pack' })
     }
 
     const packId = pack.rows[0].id
