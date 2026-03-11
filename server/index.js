@@ -45,6 +45,8 @@ async function initDb() {
       user_id INTEGER REFERENCES users(id),
       is_public BOOLEAN DEFAULT FALSE,
       tags TEXT DEFAULT '',
+      question_lang TEXT DEFAULT '',
+      answer_lang TEXT DEFAULT '',
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -65,6 +67,8 @@ async function initDb() {
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE;
     ALTER TABLE packs ADD COLUMN IF NOT EXISTS tags TEXT DEFAULT '';
+    ALTER TABLE packs ADD COLUMN IF NOT EXISTS question_lang TEXT DEFAULT '';
+    ALTER TABLE packs ADD COLUMN IF NOT EXISTS answer_lang TEXT DEFAULT '';
     ALTER TABLE words ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE;
     ALTER TABLE words ADD COLUMN IF NOT EXISTS audio VARCHAR(255) DEFAULT '';
   `).catch(() => {})
@@ -279,7 +283,7 @@ app.get('/api/watch/sync/:syncToken', async (req, res) => {
 
     const userId = user.rows[0].id
     const packsResult = await pool.query(`
-      SELECT p.token, p.name, p.updated_at
+      SELECT p.token, p.name, p.updated_at, p.question_lang, p.answer_lang
       FROM packs p
       WHERE p.user_id = $1
       ORDER BY p.updated_at DESC
@@ -295,6 +299,8 @@ app.get('/api/watch/sync/:syncToken', async (req, res) => {
         token: pack.token,
         name: pack.name,
         updated_at: pack.updated_at,
+        question_lang: pack.question_lang || '',
+        answer_lang: pack.answer_lang || '',
         words: words.rows
       })
     }
@@ -347,7 +353,7 @@ app.delete('/api/audio/:filename', authenticateToken, (req, res) => {
 app.get('/api/packs', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT p.token, p.name, p.is_public, p.tags, p.created_at, p.updated_at, COUNT(w.id)::int AS word_count
+      SELECT p.token, p.name, p.is_public, p.tags, p.question_lang, p.answer_lang, p.created_at, p.updated_at, COUNT(w.id)::int AS word_count
       FROM packs p
       LEFT JOIN words w ON w.pack_id = p.id
       WHERE p.user_id = $1
@@ -366,7 +372,7 @@ app.get('/api/packs/browse', async (req, res) => {
   try {
     const { tag, search } = req.query
     let query = `
-      SELECT p.token, p.name, p.tags, p.updated_at, u.display_name AS author, COUNT(w.id)::int AS word_count
+      SELECT p.token, p.name, p.tags, p.question_lang, p.answer_lang, p.updated_at, u.display_name AS author, COUNT(w.id)::int AS word_count
       FROM packs p
       LEFT JOIN words w ON w.pack_id = p.id
       LEFT JOIN users u ON u.id = p.user_id
@@ -381,6 +387,14 @@ app.get('/api/packs/browse', async (req, res) => {
     if (search) {
       params.push(`%${search}%`)
       query += ` AND LOWER(p.name) LIKE LOWER($${params.length})`
+    }
+    if (req.query.question_lang) {
+      params.push(req.query.question_lang)
+      query += ` AND LOWER(p.question_lang) = LOWER($${params.length})`
+    }
+    if (req.query.answer_lang) {
+      params.push(req.query.answer_lang)
+      query += ` AND LOWER(p.answer_lang) = LOWER($${params.length})`
     }
 
     query += ` GROUP BY p.id, u.display_name ORDER BY p.updated_at DESC LIMIT 50`
@@ -397,14 +411,14 @@ app.get('/api/packs/browse', async (req, res) => {
 app.get('/api/words/:token', async (req, res) => {
   try {
     const { token } = req.params
-    const pack = await pool.query('SELECT id, name, updated_at FROM packs WHERE token = $1', [token])
+    const pack = await pool.query('SELECT id, name, updated_at, question_lang, answer_lang FROM packs WHERE token = $1', [token])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
 
     const words = await pool.query(
       'SELECT question, answer, reading, audio FROM words WHERE pack_id = $1 AND enabled = true ORDER BY id',
       [pack.rows[0].id]
     )
-    res.json({ name: pack.rows[0].name, updated_at: pack.rows[0].updated_at, words: words.rows })
+    res.json({ name: pack.rows[0].name, updated_at: pack.rows[0].updated_at, question_lang: pack.rows[0].question_lang || '', answer_lang: pack.rows[0].answer_lang || '', words: words.rows })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
@@ -415,7 +429,7 @@ app.get('/api/words/:token', async (req, res) => {
 app.get('/api/packs/:token/edit', authenticateToken, async (req, res) => {
   try {
     const { token } = req.params
-    const pack = await pool.query('SELECT id, name, is_public, tags, updated_at, user_id FROM packs WHERE token = $1', [token])
+    const pack = await pool.query('SELECT id, name, is_public, tags, question_lang, answer_lang, updated_at, user_id FROM packs WHERE token = $1', [token])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id && pack.rows[0].user_id !== req.user.userId) {
       return res.status(403).json({ error: 'Not your pack' })
@@ -425,7 +439,7 @@ app.get('/api/packs/:token/edit', authenticateToken, async (req, res) => {
       'SELECT question, answer, reading, enabled, audio FROM words WHERE pack_id = $1 ORDER BY id',
       [pack.rows[0].id]
     )
-    res.json({ name: pack.rows[0].name, is_public: pack.rows[0].is_public, tags: pack.rows[0].tags || '', updated_at: pack.rows[0].updated_at, words: words.rows })
+    res.json({ name: pack.rows[0].name, is_public: pack.rows[0].is_public, tags: pack.rows[0].tags || '', question_lang: pack.rows[0].question_lang || '', answer_lang: pack.rows[0].answer_lang || '', updated_at: pack.rows[0].updated_at, words: words.rows })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
@@ -436,7 +450,7 @@ app.get('/api/packs/:token/edit', authenticateToken, async (req, res) => {
 app.post('/api/packs', authenticateToken, async (req, res) => {
   const client = await pool.connect()
   try {
-    const { name, words, token: customToken, is_public, tags } = req.body
+    const { name, words, token: customToken, is_public, tags, question_lang, answer_lang } = req.body
     if (!words || !Array.isArray(words) || words.length === 0) {
       return res.status(400).json({ error: 'Words array is required' })
     }
@@ -456,8 +470,8 @@ app.post('/api/packs', authenticateToken, async (req, res) => {
     }
     await client.query('BEGIN')
     const pack = await client.query(
-      'INSERT INTO packs (token, name, user_id, is_public, tags) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [token, name || '', req.user.userId, is_public || false, tags || '']
+      'INSERT INTO packs (token, name, user_id, is_public, tags, question_lang, answer_lang) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      [token, name || '', req.user.userId, is_public || false, tags || '', question_lang || '', answer_lang || '']
     )
     const packId = pack.rows[0].id
 
@@ -484,7 +498,7 @@ app.put('/api/packs/:token', authenticateToken, async (req, res) => {
   const client = await pool.connect()
   try {
     const { token } = req.params
-    const { name, words, is_public, tags } = req.body
+    const { name, words, is_public, tags, question_lang, answer_lang } = req.body
     if (!words || !Array.isArray(words) || words.length === 0) {
       return res.status(400).json({ error: 'Words array is required' })
     }
@@ -497,7 +511,7 @@ app.put('/api/packs/:token', authenticateToken, async (req, res) => {
 
     const packId = pack.rows[0].id
     await client.query('BEGIN')
-    await client.query('UPDATE packs SET name = $1, is_public = $2, tags = $3, updated_at = NOW() WHERE id = $4', [name || '', is_public || false, tags || '', packId])
+    await client.query('UPDATE packs SET name = $1, is_public = $2, tags = $3, question_lang = $4, answer_lang = $5, updated_at = NOW() WHERE id = $6', [name || '', is_public || false, tags || '', question_lang || '', answer_lang || '', packId])
 
     // Find old audio files to clean up
     const oldWords = await client.query('SELECT audio FROM words WHERE pack_id = $1 AND audio IS NOT NULL AND audio != \'\'', [packId])
