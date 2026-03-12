@@ -60,6 +60,14 @@ export async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(pack_id, user_id)
     );
+    CREATE TABLE IF NOT EXISTS pack_share_codes (
+      id SERIAL PRIMARY KEY,
+      pack_id INTEGER REFERENCES packs(id) ON DELETE CASCADE,
+      code VARCHAR(8) UNIQUE NOT NULL,
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '7 days'
+    );
     CREATE TABLE IF NOT EXISTS app_settings (
       key VARCHAR(255) PRIMARY KEY,
       value TEXT NOT NULL

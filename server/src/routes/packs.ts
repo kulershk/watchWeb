@@ -4,7 +4,8 @@ import { existsSync, unlinkSync } from 'fs'
 import { pool } from '../db.js'
 import { uploadsDir } from '../config.js'
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth.js'
-import { generateToken } from '../utils/generators.js'
+import { generateToken, generateShareCode } from '../utils/generators.js'
+import { optionalAuth } from '../middleware/auth.js'
 
 const router = Router()
 
@@ -220,6 +221,68 @@ router.delete('/:token', authenticateToken, async (req: AuthenticatedRequest, re
 
     await pool.query('DELETE FROM packs WHERE token = $1', [token])
     res.json({ ok: true })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/packs/:token/share — generate a share code for a pack
+router.post('/:token/share', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { token } = req.params
+    const pack = await pool.query(
+      `SELECT p.id FROM packs p LEFT JOIN pack_collaborators pc ON pc.pack_id = p.id
+       WHERE p.token = $1 AND (p.user_id = $2 OR pc.user_id = $2)`,
+      [token, req.user!.userId]
+    )
+    if (pack.rows.length === 0) return res.status(403).json({ error: 'Not your pack' })
+
+    const code = await generateShareCode()
+    await pool.query(
+      'INSERT INTO pack_share_codes (pack_id, code, created_by) VALUES ($1, $2, $3)',
+      [pack.rows[0].id, code, req.user!.userId]
+    )
+    res.json({ code })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/packs/share/:code — redeem a share code and get the pack data
+router.get('/share/:code', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { code } = req.params
+    const result = await pool.query(
+      `SELECT p.id, p.token, p.name, p.updated_at, p.question_lang, p.answer_lang, p.download_count,
+              u.display_name AS author, sc.expires_at
+       FROM pack_share_codes sc
+       JOIN packs p ON p.id = sc.pack_id
+       LEFT JOIN users u ON u.id = p.user_id
+       WHERE sc.code = $1`,
+      [code]
+    )
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Invalid share code' })
+
+    const row = result.rows[0]
+    if (new Date(row.expires_at) < new Date()) return res.status(410).json({ error: 'Share code expired' })
+
+    const words = await pool.query(
+      'SELECT question, answer, reading, audio, image FROM words WHERE pack_id = $1 AND enabled = true ORDER BY id',
+      [row.id]
+    )
+
+    res.json({
+      token: row.token,
+      name: row.name,
+      updated_at: row.updated_at,
+      question_lang: row.question_lang || '',
+      answer_lang: row.answer_lang || '',
+      author: row.author || '',
+      download_count: row.download_count || 0,
+      words: words.rows
+    })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
