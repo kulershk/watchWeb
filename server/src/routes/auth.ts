@@ -128,6 +128,11 @@ router.post('/google', async (req: AuthenticatedRequest, res: Response) => {
       user.friend_code = friendCode
     }
 
+    // Always update google_name from the latest Google token
+    if (name) {
+      await pool.query('UPDATE users SET google_name = $1 WHERE id = $2', [name, user.id])
+    }
+
     const token = createToken(user)
     res.json({ token, isNewUser, user: { id: user.id, email: user.email, displayName: user.display_name, friendCode: user.friend_code } })
   } catch (err) {

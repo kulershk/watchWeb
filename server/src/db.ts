@@ -76,5 +76,6 @@ export async function initDb() {
     ALTER TABLE words ADD COLUMN IF NOT EXISTS image VARCHAR(255) DEFAULT '';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_code VARCHAR(6) UNIQUE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS watch_sync_packs TEXT DEFAULT '[]';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS google_name TEXT DEFAULT '';
   `).catch(() => {})
 }
