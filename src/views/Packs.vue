@@ -13,10 +13,10 @@
     <p v-else-if="packs.length === 0" class="text-text-muted">No packs yet. Create one!</p>
 
     <div v-else class="space-y-2">
-      <router-link v-for="pack in packs" :key="pack.token" :to="'/edit/' + pack.token"
+      <router-link v-for="pack in packs" :key="pack.id" :to="'/edit/' + pack.id"
         class="flex items-center justify-between bg-surface hover:bg-surface-light border border-border rounded-lg p-4 transition-colors">
         <div class="flex items-center gap-4">
-          <span class="font-mono text-accent font-bold text-lg tracking-widest">{{ pack.token }}</span>
+          <span class="font-mono text-accent font-bold text-lg tracking-widest">#{{ pack.id }}</span>
           <div>
             <div class="text-text text-sm font-medium">{{ pack.name || 'Unnamed pack' }}</div>
             <div class="text-text-muted text-xs">{{ pack.word_count }} words</div>
@@ -34,7 +34,7 @@
 import { ref, onMounted } from 'vue'
 
 interface Pack {
-  token: string
+  id: number
   name: string
   created_at: string
   updated_at: string

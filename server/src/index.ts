@@ -48,15 +48,15 @@ app.get('/api/version', async (_req, res) => {
   }
 })
 
-// GET /api/words/:token — consumed by watch/phone app (public, no auth)
-app.get('/api/words/:token', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+// GET /api/words/:id — consumed by watch/phone app (public, no auth)
+app.get('/api/words/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { token } = req.params
+    const { id } = req.params
     const pack = await pool.query(`
       SELECT p.id, p.name, p.updated_at, p.question_lang, p.answer_lang, p.download_count, u.display_name AS author
       FROM packs p LEFT JOIN users u ON u.id = p.user_id
-      WHERE p.token = $1
-    `, [token])
+      WHERE p.id = $1
+    `, [id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
 
     const packId = pack.rows[0].id
@@ -68,7 +68,7 @@ app.get('/api/words/:token', optionalAuth, async (req: AuthenticatedRequest, res
       const existing = await pool.query('SELECT id FROM pack_downloads WHERE pack_id = $1 AND user_id = $2', [packId, userId])
       if (existing.rows.length === 0) {
         await pool.query('INSERT INTO pack_downloads (pack_id, user_id) VALUES ($1, $2)', [packId, userId])
-        await pool.query('UPDATE packs SET download_count = download_count + 1 WHERE token = $1', [token])
+        await pool.query('UPDATE packs SET download_count = download_count + 1 WHERE id = $1', [id])
         downloadCount++
       }
     }

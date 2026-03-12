@@ -2,10 +2,10 @@
   <div class="space-y-6">
     <h1 class="text-2xl font-bold">Edit Word Pack</h1>
 
-    <!-- Token lookup -->
+    <!-- Pack ID lookup -->
     <div v-if="!loaded" class="space-y-4">
       <form @submit.prevent="loadPack" class="flex gap-3">
-        <input v-model="tokenInput" maxlength="4" pattern="\d{4}" required placeholder="Enter 4-digit token"
+        <input v-model="packId" required placeholder="Enter pack ID"
           class="flex-1 bg-surface border border-border rounded-lg px-4 py-3 text-text text-center text-xl font-mono tracking-widest placeholder-text-muted/40 focus:border-primary transition-colors" />
         <button type="submit" :disabled="loading"
           class="bg-primary hover:bg-primary-hover disabled:opacity-50 text-bg font-semibold px-6 py-3 rounded-lg transition-colors">
@@ -19,8 +19,8 @@
     <template v-else>
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <span class="text-text-muted text-sm">Token:</span>
-          <span class="font-mono text-accent font-bold text-lg">{{ tokenInput }}</span>
+          <span class="text-text-muted text-sm">Pack ID:</span>
+          <span class="font-mono text-accent font-bold text-lg">{{ packId }}</span>
         </div>
         <button @click="reset" class="text-sm text-text-muted hover:text-text transition-colors">
           &larr; Different pack
@@ -122,7 +122,7 @@ interface Word {
 }
 
 const route = useRoute()
-const tokenInput = ref('')
+const packId = ref('')
 const name = ref('')
 const words = ref<Word[]>([])
 const loaded = ref(false)
@@ -142,9 +142,9 @@ async function removeAudio(i: number) {
 }
 
 onMounted(() => {
-  const t = route.params.token as string
+  const t = (route.params.id || route.params.token) as string
   if (t) {
-    tokenInput.value = t
+    packId.value = t
     loadPack()
   }
 })
@@ -153,7 +153,7 @@ async function loadPack() {
   error.value = ''
   loading.value = true
   try {
-    const res = await fetch(`/api/packs/${tokenInput.value}/edit`)
+    const res = await fetch(`/api/packs/${packId.value}/edit`)
     if (!res.ok) throw new Error('Pack not found')
     const data = await res.json()
     name.value = data.name || ''
@@ -192,7 +192,7 @@ function reset() {
   words.value = []
   error.value = ''
   saved.value = false
-  tokenInput.value = ''
+  packId.value = ''
 }
 
 async function savePack() {
@@ -200,7 +200,7 @@ async function savePack() {
   saved.value = false
   saving.value = true
   try {
-    const res = await fetch(`/api/packs/${tokenInput.value}`, {
+    const res = await fetch(`/api/packs/${packId.value}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name.value, words: words.value }),
@@ -220,7 +220,7 @@ async function savePack() {
 async function confirmDelete() {
   if (!confirm('Delete this word pack? This cannot be undone.')) return
   try {
-    const res = await fetch(`/api/packs/${tokenInput.value}`, { method: 'DELETE' })
+    const res = await fetch(`/api/packs/${packId.value}`, { method: 'DELETE' })
     if (!res.ok) throw new Error('Failed to delete')
     reset()
   } catch (e: any) {

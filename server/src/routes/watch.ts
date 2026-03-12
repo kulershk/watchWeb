@@ -66,13 +66,13 @@ router.post('/pair', async (req: AuthenticatedRequest, res: Response) => {
   }
 })
 
-// PUT /api/watch/sync-packs — phone pushes its enabled pack tokens for watch sync
+// PUT /api/watch/sync-packs — phone pushes its enabled pack ids for watch sync
 router.put('/sync-packs', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { tokens } = req.body
-    if (!Array.isArray(tokens)) return res.status(400).json({ error: 'tokens must be an array' })
+    const { ids } = req.body
+    if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids must be an array' })
 
-    const filtered = tokens.filter((t: any) => typeof t === 'string' && t.length > 0)
+    const filtered = ids.filter((id: any) => typeof id === 'number' || (typeof id === 'string' && id.length > 0))
     await pool.query('UPDATE users SET watch_sync_packs = $1 WHERE id = $2', [JSON.stringify(filtered), req.user!.userId])
 
     res.json({ synced: filtered.length })
@@ -90,24 +90,24 @@ router.get('/sync/:syncToken', async (req: AuthenticatedRequest, res: Response) 
     if (user.rows.length === 0) return res.status(401).json({ error: 'Invalid sync token' })
 
     const userId = user.rows[0].id
-    let syncPackTokens: string[] = []
+    let syncPackIds: (number | string)[] = []
     try {
-      syncPackTokens = JSON.parse(user.rows[0].watch_sync_packs || '[]')
-    } catch { syncPackTokens = [] }
+      syncPackIds = JSON.parse(user.rows[0].watch_sync_packs || '[]')
+    } catch { syncPackIds = [] }
 
     let packsResult
-    if (syncPackTokens.length > 0) {
+    if (syncPackIds.length > 0) {
       // Sync only the packs the phone has enabled
       packsResult = await pool.query(`
-        SELECT p.token, p.name, p.updated_at, p.question_lang, p.answer_lang
+        SELECT p.id, p.name, p.updated_at, p.question_lang, p.answer_lang
         FROM packs p
-        WHERE p.token = ANY($1)
+        WHERE p.id = ANY($1::int[])
         ORDER BY p.updated_at DESC
-      `, [syncPackTokens])
+      `, [syncPackIds])
     } else {
       // Fallback: sync all user's own packs
       packsResult = await pool.query(`
-        SELECT p.token, p.name, p.updated_at, p.question_lang, p.answer_lang
+        SELECT p.id, p.name, p.updated_at, p.question_lang, p.answer_lang
         FROM packs p
         WHERE p.user_id = $1
         ORDER BY p.updated_at DESC
@@ -117,11 +117,11 @@ router.get('/sync/:syncToken', async (req: AuthenticatedRequest, res: Response) 
     const packs = []
     for (const pack of packsResult.rows) {
       const words = await pool.query(
-        'SELECT question, answer, reading, audio, image FROM words WHERE pack_id = (SELECT id FROM packs WHERE token = $1) AND enabled = true ORDER BY id',
-        [pack.token]
+        'SELECT question, answer, reading, audio, image FROM words WHERE pack_id = $1 AND enabled = true ORDER BY id',
+        [pack.id]
       )
       packs.push({
-        token: pack.token,
+        id: pack.id,
         name: pack.name,
         updated_at: pack.updated_at,
         question_lang: pack.question_lang || '',

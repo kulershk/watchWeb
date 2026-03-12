@@ -4,14 +4,14 @@ import { authenticateToken, optionalAuth, AuthenticatedRequest } from '../middle
 
 const router = Router()
 
-// POST /api/packs/:token/rate — rate a pack (1-5 stars)
-router.post('/:token/rate', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+// POST /api/packs/:id/rate — rate a pack (1-5 stars)
+router.post('/:id/rate', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { token } = req.params
+    const { id } = req.params
     const { rating } = req.body
     if (!rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'Rating must be 1-5' })
 
-    const pack = await pool.query('SELECT id FROM packs WHERE token = $1', [token])
+    const pack = await pool.query('SELECT id FROM packs WHERE id = $1', [id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
 
     await pool.query(`
@@ -30,11 +30,11 @@ router.post('/:token/rate', authenticateToken, async (req: AuthenticatedRequest,
   }
 })
 
-// GET /api/packs/:token/rating — get rating info (optional auth to include user's rating)
-router.get('/:token/rating', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+// GET /api/packs/:id/rating — get rating info (optional auth to include user's rating)
+router.get('/:id/rating', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { token } = req.params
-    const pack = await pool.query('SELECT id FROM packs WHERE token = $1', [token])
+    const { id } = req.params
+    const pack = await pool.query('SELECT id FROM packs WHERE id = $1', [id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
 
     const stats = await pool.query(

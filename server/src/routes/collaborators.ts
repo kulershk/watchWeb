@@ -20,10 +20,10 @@ router.get('/users/lookup/:friendCode', authenticateToken, async (req: Authentic
   }
 })
 
-// GET /api/packs/:token/collaborators — list collaborators for a pack (owner only)
-router.get('/packs/:token/collaborators', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+// GET /api/packs/:id/collaborators — list collaborators for a pack (owner only)
+router.get('/packs/:id/collaborators', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const pack = await pool.query('SELECT id, user_id FROM packs WHERE token = $1', [req.params.token])
+    const pack = await pool.query('SELECT id, user_id FROM packs WHERE id = $1', [req.params.id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id !== req.user!.userId) return res.status(403).json({ error: 'Not your pack' })
 
@@ -46,13 +46,13 @@ router.get('/packs/:token/collaborators', authenticateToken, async (req: Authent
   }
 })
 
-// POST /api/packs/:token/collaborators — add collaborator by friend code (owner only)
-router.post('/packs/:token/collaborators', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+// POST /api/packs/:id/collaborators — add collaborator by friend code (owner only)
+router.post('/packs/:id/collaborators', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { friend_code } = req.body
     if (!friend_code) return res.status(400).json({ error: 'Friend code required' })
 
-    const pack = await pool.query('SELECT id, user_id FROM packs WHERE token = $1', [req.params.token])
+    const pack = await pool.query('SELECT id, user_id FROM packs WHERE id = $1', [req.params.id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id !== req.user!.userId) return res.status(403).json({ error: 'Not your pack' })
 
@@ -71,10 +71,10 @@ router.post('/packs/:token/collaborators', authenticateToken, async (req: Authen
   }
 })
 
-// DELETE /api/packs/:token/collaborators/:userId — remove collaborator (owner only)
-router.delete('/packs/:token/collaborators/:userId', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+// DELETE /api/packs/:id/collaborators/:userId — remove collaborator (owner only)
+router.delete('/packs/:id/collaborators/:userId', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const pack = await pool.query('SELECT id, user_id FROM packs WHERE token = $1', [req.params.token])
+    const pack = await pool.query('SELECT id, user_id FROM packs WHERE id = $1', [req.params.id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id !== req.user!.userId) return res.status(403).json({ error: 'Not your pack' })
 

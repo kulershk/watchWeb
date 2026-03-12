@@ -2,15 +2,15 @@
   <div class="space-y-6">
     <h1 class="text-2xl font-bold">Create Word Pack</h1>
 
-    <div v-if="createdToken" class="bg-surface rounded-lg p-6 border border-accent/30 text-center space-y-3">
-      <p class="text-text-muted">Your word pack is ready! Enter this code on your watch:</p>
-      <div class="text-4xl font-mono font-bold text-accent tracking-widest">{{ createdToken }}</div>
+    <div v-if="createdId" class="bg-surface rounded-lg p-6 border border-accent/30 text-center space-y-3">
+      <p class="text-text-muted">Your word pack is ready!</p>
+      <div class="text-4xl font-mono font-bold text-accent tracking-widest">Pack #{{ createdId }}</div>
       <div class="flex gap-3 justify-center pt-2">
         <button @click="resetForm"
           class="bg-surface-light hover:bg-border text-text px-4 py-2 rounded-lg border border-border text-sm transition-colors">
           Create Another
         </button>
-        <router-link :to="'/edit/' + createdToken"
+        <router-link :to="'/edit/' + createdId"
           class="bg-primary hover:bg-primary-hover text-bg px-4 py-2 rounded-lg text-sm font-medium transition-colors">
           Edit Pack
         </router-link>
@@ -22,16 +22,6 @@
         <label class="text-xs text-text-muted block mb-1">Pack Name</label>
         <input v-model="name" required placeholder="JLPT N5 Vocabulary"
           class="w-full bg-bg border border-border rounded px-3 py-2 text-text placeholder-text-muted/40 focus:border-primary transition-colors" />
-      </div>
-
-      <div class="bg-surface rounded-lg p-4 border border-border space-y-2">
-        <label class="flex items-center gap-2 cursor-pointer select-none">
-          <input type="checkbox" v-model="useCustomToken"
-            class="w-4 h-4 accent-primary rounded" />
-          <span class="text-xs text-text-muted">Set custom pack code</span>
-        </label>
-        <input v-if="useCustomToken" v-model="customToken" maxlength="4" pattern="\d{4}" placeholder="e.g. 1234"
-          class="w-full bg-bg border border-border rounded px-3 py-2 text-text font-mono tracking-widest placeholder-text-muted/40 focus:border-primary transition-colors" />
       </div>
 
       <div v-for="(word, i) in words" :key="i"
@@ -114,11 +104,9 @@ interface Word {
 
 const name = ref('')
 const words = ref<Word[]>([{ question: '', answer: '', reading: '', enabled: true, audio: '' }])
-const createdToken = ref('')
+const createdId = ref('')
 const error = ref('')
 const submitting = ref(false)
-const customToken = ref('')
-const useCustomToken = ref(false)
 const showImport = ref(false)
 const importText = ref('')
 
@@ -158,9 +146,7 @@ function doImport() {
 function resetForm() {
   name.value = ''
   words.value = [{ question: '', answer: '', reading: '', enabled: true, audio: '' }]
-  createdToken.value = ''
-  customToken.value = ''
-  useCustomToken.value = false
+  createdId.value = ''
   error.value = ''
 }
 
@@ -171,14 +157,14 @@ async function submit() {
     const res = await fetch('/api/packs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.value, words: words.value, token: useCustomToken.value ? customToken.value : undefined }),
+      body: JSON.stringify({ name: name.value, words: words.value }),
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
       throw new Error(data.error || 'Failed to create pack')
     }
     const data = await res.json()
-    createdToken.value = data.token
+    createdId.value = data.id
   } catch (e: any) {
     error.value = e.message
   } finally {

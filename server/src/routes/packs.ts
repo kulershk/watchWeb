@@ -4,7 +4,7 @@ import { existsSync, unlinkSync } from 'fs'
 import { pool } from '../db.js'
 import { uploadsDir } from '../config.js'
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth.js'
-import { generateToken, generateShareCode } from '../utils/generators.js'
+import { generateShareCode } from '../utils/generators.js'
 import { optionalAuth } from '../middleware/auth.js'
 
 const router = Router()
@@ -13,7 +13,7 @@ const router = Router()
 router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query(`
-      SELECT p.token, p.name, p.is_public, p.tags, p.question_lang, p.answer_lang, p.download_count, p.created_at, p.updated_at, COUNT(w.id)::int AS word_count,
+      SELECT p.id, p.name, p.is_public, p.tags, p.question_lang, p.answer_lang, p.download_count, p.created_at, p.updated_at, COUNT(w.id)::int AS word_count,
         CASE WHEN p.user_id = $1 THEN true ELSE false END AS is_owner
       FROM packs p
       LEFT JOIN words w ON w.pack_id = p.id
@@ -34,7 +34,7 @@ router.get('/browse', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { tag, search } = req.query
     let query = `
-      SELECT p.token, p.name, p.tags, p.question_lang, p.answer_lang, p.download_count, p.updated_at, u.display_name AS author, COUNT(w.id)::int AS word_count,
+      SELECT p.id, p.name, p.tags, p.question_lang, p.answer_lang, p.download_count, p.updated_at, u.display_name AS author, COUNT(w.id)::int AS word_count,
         COALESCE(AVG(pr.rating), 0) AS avg_rating, COUNT(DISTINCT pr.id)::int AS rating_count
       FROM packs p
       LEFT JOIN words w ON w.pack_id = p.id
@@ -71,14 +71,14 @@ router.get('/browse', async (req: AuthenticatedRequest, res: Response) => {
   }
 })
 
-// GET /api/packs/:token/edit — all words including disabled
-router.get('/:token/edit', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+// GET /api/packs/:id/edit — all words including disabled
+router.get('/:id/edit', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { token } = req.params
-    const pack = await pool.query('SELECT id, name, is_public, tags, question_lang, answer_lang, updated_at, user_id FROM packs WHERE token = $1', [token])
+    const { id } = req.params
+    const pack = await pool.query('SELECT id, name, is_public, tags, question_lang, answer_lang, updated_at, user_id FROM packs WHERE id = $1', [id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id && pack.rows[0].user_id !== req.user!.userId) {
-      const collab = await pool.query('SELECT 1 FROM pack_collaborators pc JOIN packs p ON p.id = pc.pack_id WHERE p.token = $1 AND pc.user_id = $2', [token, req.user!.userId])
+      const collab = await pool.query('SELECT 1 FROM pack_collaborators pc WHERE pc.pack_id = $1 AND pc.user_id = $2', [id, req.user!.userId])
       if (collab.rows.length === 0) return res.status(403).json({ error: 'Not your pack' })
     }
 
@@ -97,28 +97,15 @@ router.get('/:token/edit', authenticateToken, async (req: AuthenticatedRequest, 
 router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const client = await pool.connect()
   try {
-    const { name, words, token: customToken, is_public, tags, question_lang, answer_lang } = req.body
+    const { name, words, is_public, tags, question_lang, answer_lang } = req.body
     if (!words || !Array.isArray(words) || words.length === 0) {
       return res.status(400).json({ error: 'Words array is required' })
     }
 
-    let token
-    if (customToken) {
-      if (!/^\d{4}$/.test(customToken)) {
-        return res.status(400).json({ error: 'Code must be exactly 4 digits' })
-      }
-      const existing = await pool.query('SELECT 1 FROM packs WHERE token = $1', [customToken])
-      if (existing.rows.length > 0) {
-        return res.status(409).json({ error: 'That code is already in use' })
-      }
-      token = customToken
-    } else {
-      token = await generateToken()
-    }
     await client.query('BEGIN')
     const pack = await client.query(
-      'INSERT INTO packs (token, name, user_id, is_public, tags, question_lang, answer_lang) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-      [token, name || '', req.user!.userId, is_public || false, tags || '', question_lang || '', answer_lang || '']
+      'INSERT INTO packs (name, user_id, is_public, tags, question_lang, answer_lang) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [name || '', req.user!.userId, is_public || false, tags || '', question_lang || '', answer_lang || '']
     )
     const packId = pack.rows[0].id
 
@@ -130,7 +117,7 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
     }
 
     await client.query('COMMIT')
-    res.json({ token })
+    res.json({ id: packId })
   } catch (err) {
     await client.query('ROLLBACK')
     console.error(err)
@@ -140,20 +127,20 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
   }
 })
 
-// PUT /api/packs/:token — update a word pack
-router.put('/:token', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+// PUT /api/packs/:id — update a word pack
+router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const client = await pool.connect()
   try {
-    const { token } = req.params
+    const { id } = req.params
     const { name, words, is_public, tags, question_lang, answer_lang } = req.body
     if (!words || !Array.isArray(words) || words.length === 0) {
       return res.status(400).json({ error: 'Words array is required' })
     }
 
-    const pack = await client.query('SELECT id, user_id FROM packs WHERE token = $1', [token])
+    const pack = await client.query('SELECT id, user_id FROM packs WHERE id = $1', [id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id && pack.rows[0].user_id !== req.user!.userId) {
-      const collab = await client.query('SELECT 1 FROM pack_collaborators pc JOIN packs p ON p.id = pc.pack_id WHERE p.token = $1 AND pc.user_id = $2', [token, req.user!.userId])
+      const collab = await client.query('SELECT 1 FROM pack_collaborators pc WHERE pc.pack_id = $1 AND pc.user_id = $2', [id, req.user!.userId])
       if (collab.rows.length === 0) return res.status(403).json({ error: 'Not your pack' })
     }
 
@@ -196,11 +183,11 @@ router.put('/:token', authenticateToken, async (req: AuthenticatedRequest, res: 
   }
 })
 
-// DELETE /api/packs/:token
-router.delete('/:token', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+// DELETE /api/packs/:id
+router.delete('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { token } = req.params
-    const pack = await pool.query('SELECT id, user_id FROM packs WHERE token = $1', [token])
+    const { id } = req.params
+    const pack = await pool.query('SELECT id, user_id FROM packs WHERE id = $1', [id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id && pack.rows[0].user_id !== req.user!.userId) {
       return res.status(403).json({ error: 'Not your pack' })
@@ -219,7 +206,7 @@ router.delete('/:token', authenticateToken, async (req: AuthenticatedRequest, re
       }
     }
 
-    await pool.query('DELETE FROM packs WHERE token = $1', [token])
+    await pool.query('DELETE FROM packs WHERE id = $1', [id])
     res.json({ ok: true })
   } catch (err) {
     console.error(err)
@@ -227,14 +214,14 @@ router.delete('/:token', authenticateToken, async (req: AuthenticatedRequest, re
   }
 })
 
-// POST /api/packs/:token/share — generate a share code for a pack
-router.post('/:token/share', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+// POST /api/packs/:id/share — generate a share code for a pack
+router.post('/:id/share', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { token } = req.params
+    const { id } = req.params
     const pack = await pool.query(
       `SELECT p.id FROM packs p LEFT JOIN pack_collaborators pc ON pc.pack_id = p.id
-       WHERE p.token = $1 AND (p.user_id = $2 OR pc.user_id = $2)`,
-      [token, req.user!.userId]
+       WHERE p.id = $1 AND (p.user_id = $2 OR pc.user_id = $2)`,
+      [id, req.user!.userId]
     )
     if (pack.rows.length === 0) return res.status(403).json({ error: 'Not your pack' })
 
@@ -255,7 +242,7 @@ router.get('/share/:code', optionalAuth, async (req: AuthenticatedRequest, res: 
   try {
     const { code } = req.params
     const result = await pool.query(
-      `SELECT p.id, p.token, p.name, p.updated_at, p.question_lang, p.answer_lang, p.download_count,
+      `SELECT p.id, p.name, p.updated_at, p.question_lang, p.answer_lang, p.download_count,
               u.display_name AS author, sc.expires_at
        FROM pack_share_codes sc
        JOIN packs p ON p.id = sc.pack_id
@@ -274,7 +261,7 @@ router.get('/share/:code', optionalAuth, async (req: AuthenticatedRequest, res: 
     )
 
     res.json({
-      token: row.token,
+      id: row.id,
       name: row.name,
       updated_at: row.updated_at,
       question_lang: row.question_lang || '',

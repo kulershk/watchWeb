@@ -18,7 +18,6 @@ export async function initDb() {
     );
     CREATE TABLE IF NOT EXISTS packs (
       id SERIAL PRIMARY KEY,
-      token VARCHAR(4) UNIQUE NOT NULL,
       name TEXT DEFAULT '',
       user_id INTEGER REFERENCES users(id),
       is_public BOOLEAN DEFAULT FALSE,

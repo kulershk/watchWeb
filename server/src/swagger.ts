@@ -60,7 +60,7 @@ export const swaggerSpec = {
       Pack: {
         type: 'object',
         properties: {
-          token: { type: 'string', example: '1234' },
+          id: { type: 'integer' },
           name: { type: 'string' },
           word_count: { type: 'integer' },
           is_public: { type: 'boolean' },
@@ -76,7 +76,7 @@ export const swaggerSpec = {
       PublicPack: {
         type: 'object',
         properties: {
-          token: { type: 'string' },
+          id: { type: 'integer' },
           name: { type: 'string' },
           word_count: { type: 'integer' },
           tags: { type: 'string' },
@@ -264,7 +264,6 @@ export const swaggerSpec = {
                 required: ['name', 'words'],
                 properties: {
                   name: { type: 'string' },
-                  token: { type: 'string', pattern: '^\\d{4}$', description: 'Optional custom 4-digit token' },
                   words: { type: 'array', items: { $ref: '#/components/schemas/EditWord' } },
                   is_public: { type: 'boolean' },
                   tags: { type: 'string' },
@@ -276,8 +275,7 @@ export const swaggerSpec = {
           }
         },
         responses: {
-          '200': { description: 'Created', content: { 'application/json': { schema: { type: 'object', properties: { token: { type: 'string' } } } } } },
-          '409': { description: 'Token already in use' }
+          '200': { description: 'Created', content: { 'application/json': { schema: { type: 'object', properties: { id: { type: 'integer' } } } } } }
         }
       }
     },
@@ -299,12 +297,12 @@ export const swaggerSpec = {
         }
       }
     },
-    '/api/packs/{token}': {
+    '/api/packs/{id}': {
       put: {
         tags: ['Packs'],
         summary: 'Update a pack (replaces all words)',
         security: [{ BearerAuth: [] }],
-        parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
         requestBody: {
           required: true,
           content: {
@@ -334,7 +332,7 @@ export const swaggerSpec = {
         tags: ['Packs'],
         summary: 'Delete a pack and all its words/assets',
         security: [{ BearerAuth: [] }],
-        parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
         responses: {
           '200': { description: 'Deleted', content: { 'application/json': { schema: { type: 'object', properties: { ok: { type: 'boolean' } } } } } },
           '403': { description: 'Not the owner' },
@@ -342,12 +340,12 @@ export const swaggerSpec = {
         }
       }
     },
-    '/api/packs/{token}/edit': {
+    '/api/packs/{id}/edit': {
       get: {
         tags: ['Packs'],
         summary: 'Get full pack data for editing (includes disabled words)',
         security: [{ BearerAuth: [] }],
-        parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
         responses: {
           '200': {
             description: 'Pack editor data',
@@ -374,13 +372,13 @@ export const swaggerSpec = {
     },
 
     // ==================== WORDS (public mobile endpoint) ====================
-    '/api/words/{token}': {
+    '/api/words/{id}': {
       get: {
         tags: ['Packs'],
         summary: 'Get pack for mobile apps (enabled words only)',
         description: 'Public endpoint consumed by watch and phone apps. Tracks downloads per unique authenticated user.',
         security: [{ BearerAuth: [] }],
-        parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
         responses: {
           '200': {
             description: 'Pack with words',
@@ -407,12 +405,12 @@ export const swaggerSpec = {
     },
 
     // ==================== RATINGS ====================
-    '/api/packs/{token}/rate': {
+    '/api/packs/{id}/rate': {
       post: {
         tags: ['Ratings'],
         summary: 'Rate a pack (1-5)',
         security: [{ BearerAuth: [] }],
-        parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
         requestBody: {
           required: true,
           content: {
@@ -446,11 +444,11 @@ export const swaggerSpec = {
         }
       }
     },
-    '/api/packs/{token}/rating': {
+    '/api/packs/{id}/rating': {
       get: {
         tags: ['Ratings'],
         summary: 'Get rating info for a pack',
-        parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
         responses: {
           '200': {
             description: 'Rating info',
@@ -487,12 +485,12 @@ export const swaggerSpec = {
         }
       }
     },
-    '/api/packs/{token}/collaborators': {
+    '/api/packs/{id}/collaborators': {
       get: {
         tags: ['Collaborators'],
         summary: 'List collaborators for a pack',
         security: [{ BearerAuth: [] }],
-        parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
         responses: {
           '200': {
             description: 'Collaborator list',
@@ -504,7 +502,7 @@ export const swaggerSpec = {
         tags: ['Collaborators'],
         summary: 'Add a collaborator by friend code',
         security: [{ BearerAuth: [] }],
-        parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
         requestBody: {
           required: true,
           content: {
@@ -526,13 +524,13 @@ export const swaggerSpec = {
         }
       }
     },
-    '/api/packs/{token}/collaborators/{userId}': {
+    '/api/packs/{id}/collaborators/{userId}': {
       delete: {
         tags: ['Collaborators'],
         summary: 'Remove a collaborator',
         security: [{ BearerAuth: [] }],
         parameters: [
-          { name: 'token', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
           { name: 'userId', in: 'path', required: true, schema: { type: 'integer' } }
         ],
         responses: {
@@ -597,7 +595,7 @@ export const swaggerSpec = {
     '/api/watch/sync-packs': {
       put: {
         tags: ['Watch Sync'],
-        summary: 'Push enabled pack tokens from phone for watch sync',
+        summary: 'Push enabled pack IDs from phone for watch sync',
         security: [{ BearerAuth: [] }],
         requestBody: {
           required: true,
@@ -605,9 +603,9 @@ export const swaggerSpec = {
             'application/json': {
               schema: {
                 type: 'object',
-                required: ['tokens'],
+                required: ['ids'],
                 properties: {
-                  tokens: { type: 'array', items: { type: 'string' }, description: 'Pack tokens enabled on the phone' }
+                  ids: { type: 'array', items: { type: 'integer' }, description: 'Pack IDs enabled on the phone' }
                 }
               }
             }
@@ -639,7 +637,7 @@ export const swaggerSpec = {
                       items: {
                         type: 'object',
                         properties: {
-                          token: { type: 'string' },
+                          id: { type: 'integer' },
                           name: { type: 'string' },
                           updated_at: { type: 'string', format: 'date-time' },
                           question_lang: { type: 'string' },
