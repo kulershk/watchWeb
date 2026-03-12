@@ -178,8 +178,50 @@ export const swaggerSpec = {
           }
         },
         responses: {
-          '200': { description: 'Authenticated', content: { 'application/json': { schema: { $ref: '#/components/schemas/AuthResponse' } } } },
+          '200': {
+            description: 'Authenticated',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    token: { type: 'string' },
+                    isNewUser: { type: 'boolean', description: 'True if account was just created' },
+                    user: { $ref: '#/components/schemas/User' }
+                  }
+                }
+              }
+            }
+          },
           '401': { description: 'Invalid token', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } }
+        }
+      }
+    },
+    '/api/auth/display-name': {
+      put: {
+        tags: ['Auth'],
+        summary: 'Update display name',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['displayName'],
+                properties: {
+                  displayName: { type: 'string', maxLength: 100 }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          '200': {
+            description: 'Updated',
+            content: { 'application/json': { schema: { type: 'object', properties: { displayName: { type: 'string' } } } } }
+          },
+          '400': { description: 'Invalid input' }
         }
       }
     },

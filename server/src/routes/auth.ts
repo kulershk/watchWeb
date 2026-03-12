@@ -103,6 +103,7 @@ router.post('/google', async (req: AuthenticatedRequest, res: Response) => {
     // Check if user exists by google_id
     let result = await pool.query('SELECT id, email, display_name, friend_code FROM users WHERE google_id = $1', [googleId])
 
+    let isNewUser = false
     if (result.rows.length === 0) {
       // Check if user exists by email (registered with password)
       result = await pool.query('SELECT id, email, display_name, friend_code FROM users WHERE email = $1', [email!.toLowerCase()])
@@ -111,6 +112,7 @@ router.post('/google', async (req: AuthenticatedRequest, res: Response) => {
         await pool.query('UPDATE users SET google_id = $1 WHERE id = $2', [googleId, result.rows[0].id])
       } else {
         // Create new user
+        isNewUser = true
         const friendCode = await generateFriendCode()
         result = await pool.query(
           'INSERT INTO users (email, google_id, display_name, friend_code) VALUES ($1, $2, $3, $4) RETURNING id, email, display_name, friend_code',
@@ -127,7 +129,7 @@ router.post('/google', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const token = createToken(user)
-    res.json({ token, user: { id: user.id, email: user.email, displayName: user.display_name, friendCode: user.friend_code } })
+    res.json({ token, isNewUser, user: { id: user.id, email: user.email, displayName: user.display_name, friendCode: user.friend_code } })
   } catch (err) {
     console.error(err)
     res.status(401).json({ error: 'Invalid Google token' })
@@ -146,6 +148,20 @@ router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Resp
       user.friend_code = friendCode
     }
     res.json({ id: user.id, email: user.email, displayName: user.display_name, friendCode: user.friend_code })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PUT /api/auth/display-name
+router.put('/display-name', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { displayName } = req.body
+    if (typeof displayName !== 'string') return res.status(400).json({ error: 'Display name required' })
+    const sanitized = displayName.trim().slice(0, 100)
+    await pool.query('UPDATE users SET display_name = $1 WHERE id = $2', [sanitized, req.user!.userId])
+    res.json({ displayName: sanitized })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
