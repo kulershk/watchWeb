@@ -12,6 +12,7 @@ services:
     volumes:
       - ../../src:/app/src
       - ../../server:/app/server
+      - watch_dev_uploads:/app/server/uploads
       - ../../public:/app/public
       - ../../index.html:/app/index.html
       - ../../vite.config.ts:/app/vite.config.ts
@@ -41,3 +42,4 @@ services:
 
 volumes:
   watch_dev_pgdata:
+  watch_dev_uploads:
