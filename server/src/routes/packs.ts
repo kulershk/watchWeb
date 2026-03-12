@@ -82,7 +82,7 @@ router.get('/:token/edit', authenticateToken, async (req: AuthenticatedRequest, 
     }
 
     const words = await pool.query(
-      'SELECT question, answer, reading, enabled, audio FROM words WHERE pack_id = $1 ORDER BY id',
+      'SELECT question, answer, reading, enabled, audio, image FROM words WHERE pack_id = $1 ORDER BY id',
       [pack.rows[0].id]
     )
     res.json({ name: pack.rows[0].name, is_public: pack.rows[0].is_public, tags: pack.rows[0].tags || '', question_lang: pack.rows[0].question_lang || '', answer_lang: pack.rows[0].answer_lang || '', updated_at: pack.rows[0].updated_at, words: words.rows })
@@ -123,8 +123,8 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
 
     for (const word of words) {
       await client.query(
-        'INSERT INTO words (pack_id, question, answer, reading, enabled, audio) VALUES ($1, $2, $3, $4, $5, $6)',
-        [packId, word.question, word.answer, word.reading || '', word.enabled !== false, word.audio || '']
+        'INSERT INTO words (pack_id, question, answer, reading, enabled, audio, image) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [packId, word.question, word.answer, word.reading || '', word.enabled !== false, word.audio || '', word.image || '']
       )
     }
 
@@ -160,12 +160,17 @@ router.put('/:token', authenticateToken, async (req: AuthenticatedRequest, res: 
     await client.query('BEGIN')
     await client.query('UPDATE packs SET name = $1, is_public = $2, tags = $3, question_lang = $4, answer_lang = $5, updated_at = NOW() WHERE id = $6', [name || '', is_public || false, tags || '', question_lang || '', answer_lang || '', packId])
 
-    // Find old audio files to clean up
-    const oldWords = await client.query('SELECT audio FROM words WHERE pack_id = $1 AND audio IS NOT NULL AND audio != \'\'', [packId])
+    // Find old audio/image files to clean up
+    const oldWords = await client.query('SELECT audio, image FROM words WHERE pack_id = $1', [packId])
     const newAudioFiles = new Set(words.map((w: any) => w.audio).filter(Boolean))
+    const newImageFiles = new Set(words.map((w: any) => w.image).filter(Boolean))
     for (const oldWord of oldWords.rows) {
-      if (!newAudioFiles.has(oldWord.audio)) {
+      if (oldWord.audio && !newAudioFiles.has(oldWord.audio)) {
         const filePath = join(uploadsDir, oldWord.audio)
+        if (existsSync(filePath)) unlinkSync(filePath)
+      }
+      if (oldWord.image && !newImageFiles.has(oldWord.image)) {
+        const filePath = join(uploadsDir, oldWord.image)
         if (existsSync(filePath)) unlinkSync(filePath)
       }
     }
@@ -174,8 +179,8 @@ router.put('/:token', authenticateToken, async (req: AuthenticatedRequest, res: 
 
     for (const word of words) {
       await client.query(
-        'INSERT INTO words (pack_id, question, answer, reading, enabled, audio) VALUES ($1, $2, $3, $4, $5, $6)',
-        [packId, word.question, word.answer, word.reading || '', word.enabled !== false, word.audio || '']
+        'INSERT INTO words (pack_id, question, answer, reading, enabled, audio, image) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [packId, word.question, word.answer, word.reading || '', word.enabled !== false, word.audio || '', word.image || '']
       )
     }
 
@@ -200,11 +205,17 @@ router.delete('/:token', authenticateToken, async (req: AuthenticatedRequest, re
       return res.status(403).json({ error: 'Not your pack' })
     }
 
-    // Delete audio files
-    const words = await pool.query('SELECT audio FROM words WHERE pack_id = $1 AND audio IS NOT NULL AND audio != \'\'', [pack.rows[0].id])
+    // Delete audio and image files
+    const words = await pool.query('SELECT audio, image FROM words WHERE pack_id = $1', [pack.rows[0].id])
     for (const word of words.rows) {
-      const filePath = join(uploadsDir, word.audio)
-      if (existsSync(filePath)) unlinkSync(filePath)
+      if (word.audio) {
+        const filePath = join(uploadsDir, word.audio)
+        if (existsSync(filePath)) unlinkSync(filePath)
+      }
+      if (word.image) {
+        const filePath = join(uploadsDir, word.image)
+        if (existsSync(filePath)) unlinkSync(filePath)
+      }
     }
 
     await pool.query('DELETE FROM packs WHERE token = $1', [token])

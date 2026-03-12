@@ -84,7 +84,7 @@ router.get('/sync/:syncToken', async (req: AuthenticatedRequest, res: Response) 
     const packs = []
     for (const pack of packsResult.rows) {
       const words = await pool.query(
-        'SELECT question, answer, reading, audio FROM words WHERE pack_id = (SELECT id FROM packs WHERE token = $1) AND enabled = true ORDER BY id',
+        'SELECT question, answer, reading, audio, image FROM words WHERE pack_id = (SELECT id FROM packs WHERE token = $1) AND enabled = true ORDER BY id',
         [pack.token]
       )
       packs.push({

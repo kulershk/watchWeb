@@ -12,6 +12,7 @@ import ratingsRoutes from './routes/ratings.js'
 import collaboratorsRoutes from './routes/collaborators.js'
 import watchRoutes from './routes/watch.js'
 import audioRoutes from './routes/audio.js'
+import imageRoutes from './routes/images.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -26,6 +27,7 @@ app.use('/api/packs', ratingsRoutes)
 app.use('/api', collaboratorsRoutes)
 app.use('/api/watch', watchRoutes)
 app.use('/api/audio', audioRoutes)
+app.use('/api/images', imageRoutes)
 
 // GET /api/words/:token — consumed by watch/phone app (public, no auth)
 app.get('/api/words/:token', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
@@ -53,7 +55,7 @@ app.get('/api/words/:token', optionalAuth, async (req: AuthenticatedRequest, res
     }
 
     const words = await pool.query(
-      'SELECT question, answer, reading, audio FROM words WHERE pack_id = $1 AND enabled = true ORDER BY id',
+      'SELECT question, answer, reading, audio, image FROM words WHERE pack_id = $1 AND enabled = true ORDER BY id',
       [packId]
     )
     const p = pack.rows[0]
