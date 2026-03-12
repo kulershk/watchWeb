@@ -27,7 +27,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:-change-this-to-a-random-secret}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
     volumes:
-      - watch_uploads:/app/server/uploads
+      - /var/www/watchWeb/uploads:/app/server/uploads
     depends_on:
       watch-db:
         condition: service_healthy
@@ -57,7 +57,6 @@ services:
 
 volumes:
   watch_pgdata:
-  watch_uploads:
 
 networks:
   frontend:
