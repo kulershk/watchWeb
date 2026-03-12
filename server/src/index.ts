@@ -13,12 +13,18 @@ import collaboratorsRoutes from './routes/collaborators.js'
 import watchRoutes from './routes/watch.js'
 import audioRoutes from './routes/audio.js'
 import imageRoutes from './routes/images.js'
+import swaggerUi from 'swagger-ui-express'
+import { swaggerSpec } from './swagger.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
 
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
+
+// Swagger docs
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec))
+app.get('/api/docs.json', (_req, res) => res.json(swaggerSpec))
 
 // Routes
 app.use('/api/auth', authRoutes)
