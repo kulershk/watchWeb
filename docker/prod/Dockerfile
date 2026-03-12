@@ -22,4 +22,4 @@ EXPOSE 3001
 
 ENV NODE_ENV=production
 
-CMD ["node", "server/index.js"]
+CMD ["npx", "tsx", "server/src/index.ts"]
