@@ -3,4 +3,5 @@ dist
 .env
 .idea
 *.log
-server/uploads
+server/uploads/*
+!server/uploads/.gitkeep

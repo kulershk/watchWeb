@@ -11,5 +11,5 @@ export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || ''
 export const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID)
 
 // uploads/ lives at server/uploads/, not inside src/
-export const uploadsDir = join(__dirname, '../../uploads')
+export const uploadsDir = join(__dirname, '../uploads')
 if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true })
