@@ -7,21 +7,49 @@ import { generateFriendCode } from '../utils/generators.js'
 
 const router = Router()
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PASSWORD_MIN_LENGTH = 8
+
+function validateEmail(email: string): string | null {
+  if (!email || typeof email !== 'string') return 'Email is required'
+  const trimmed = email.trim().toLowerCase()
+  if (trimmed.length > 255) return 'Email must be 255 characters or less'
+  if (!EMAIL_REGEX.test(trimmed)) return 'Invalid email format'
+  return null
+}
+
+function validatePassword(password: string): string | null {
+  if (!password || typeof password !== 'string') return 'Password is required'
+  if (password.length < PASSWORD_MIN_LENGTH) return `Password must be at least ${PASSWORD_MIN_LENGTH} characters`
+  if (password.length > 128) return 'Password must be 128 characters or less'
+  if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter'
+  if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter'
+  if (!/[0-9]/.test(password)) return 'Password must contain at least one number'
+  return null
+}
+
 // POST /api/auth/register
 router.post('/register', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { email, password, displayName } = req.body
-    if (!email || !password) return res.status(400).json({ error: 'Email and password required' })
-    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' })
+
+    const emailError = validateEmail(email)
+    if (emailError) return res.status(400).json({ error: emailError })
+
+    const passwordError = validatePassword(password)
+    if (passwordError) return res.status(400).json({ error: passwordError })
 
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()])
     if (existing.rows.length > 0) return res.status(409).json({ error: 'Email already registered' })
+
+    const sanitizedEmail = email.trim().toLowerCase()
+    const sanitizedDisplayName = (displayName || '').trim().slice(0, 100)
 
     const passwordHash = await bcrypt.hash(password, 12)
     const friendCode = await generateFriendCode()
     const result = await pool.query(
       'INSERT INTO users (email, password_hash, display_name, friend_code) VALUES ($1, $2, $3, $4) RETURNING id, email, display_name, friend_code',
-      [email.toLowerCase(), passwordHash, displayName || '', friendCode]
+      [sanitizedEmail, passwordHash, sanitizedDisplayName, friendCode]
     )
     const user = result.rows[0]
     const token = createToken(user)

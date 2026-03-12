@@ -39,6 +39,8 @@ services:
     image: postgres:16-alpine
     container_name: watch-db
     restart: always
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_DB: watch
       POSTGRES_USER: watch
