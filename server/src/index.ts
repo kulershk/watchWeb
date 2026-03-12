@@ -35,6 +35,19 @@ app.use('/api/watch', watchRoutes)
 app.use('/api/audio', audioRoutes)
 app.use('/api/images', imageRoutes)
 
+// GET /api/version — returns latest app versions for update checks
+app.get('/api/version', async (_req, res) => {
+  try {
+    const result = await pool.query(`SELECT key, value FROM app_settings WHERE key IN ('phone_version', 'watch_version')`)
+    const settings: Record<string, string> = {}
+    for (const row of result.rows) settings[row.key] = row.value
+    res.json({ phone: settings.phone_version || '', watch: settings.watch_version || '' })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // GET /api/words/:token — consumed by watch/phone app (public, no auth)
 app.get('/api/words/:token', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {

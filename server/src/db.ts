@@ -60,6 +60,11 @@ export async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(pack_id, user_id)
     );
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key VARCHAR(255) PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+    INSERT INTO app_settings (key, value) VALUES ('phone_version', '1.5'), ('watch_version', '1.5') ON CONFLICT (key) DO NOTHING;
   `)
   await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS sync_token VARCHAR(255) UNIQUE;
