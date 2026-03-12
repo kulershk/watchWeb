@@ -73,21 +73,25 @@ export async function initDb() {
     );
     INSERT INTO app_settings (key, value) VALUES ('phone_version', '1.5'), ('watch_version', '1.5') ON CONFLICT (key) DO NOTHING;
   `)
-  await pool.query(`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS sync_token VARCHAR(255) UNIQUE;
-    ALTER TABLE packs ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
-    ALTER TABLE packs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-    ALTER TABLE packs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
-    ALTER TABLE packs ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE;
-    ALTER TABLE packs ADD COLUMN IF NOT EXISTS tags TEXT DEFAULT '';
-    ALTER TABLE packs ADD COLUMN IF NOT EXISTS question_lang TEXT DEFAULT '';
-    ALTER TABLE packs ADD COLUMN IF NOT EXISTS answer_lang TEXT DEFAULT '';
-    ALTER TABLE packs ADD COLUMN IF NOT EXISTS download_count INTEGER DEFAULT 0;
-    ALTER TABLE words ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE;
-    ALTER TABLE words ADD COLUMN IF NOT EXISTS audio VARCHAR(255) DEFAULT '';
-    ALTER TABLE words ADD COLUMN IF NOT EXISTS image VARCHAR(255) DEFAULT '';
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_code VARCHAR(6) UNIQUE;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS watch_sync_packs TEXT DEFAULT '[]';
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS google_name TEXT DEFAULT '';
-  `).catch(() => {})
+  const migrations = [
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS sync_token VARCHAR(255) UNIQUE`,
+    `ALTER TABLE packs ADD COLUMN IF NOT EXISTS name TEXT DEFAULT ''`,
+    `ALTER TABLE packs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`,
+    `ALTER TABLE packs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)`,
+    `ALTER TABLE packs ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE`,
+    `ALTER TABLE packs ADD COLUMN IF NOT EXISTS tags TEXT DEFAULT ''`,
+    `ALTER TABLE packs ADD COLUMN IF NOT EXISTS question_lang TEXT DEFAULT ''`,
+    `ALTER TABLE packs ADD COLUMN IF NOT EXISTS answer_lang TEXT DEFAULT ''`,
+    `ALTER TABLE packs ADD COLUMN IF NOT EXISTS download_count INTEGER DEFAULT 0`,
+    `ALTER TABLE words ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE`,
+    `ALTER TABLE words ADD COLUMN IF NOT EXISTS audio VARCHAR(255) DEFAULT ''`,
+    `ALTER TABLE words ADD COLUMN IF NOT EXISTS image VARCHAR(255) DEFAULT ''`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_code VARCHAR(6) UNIQUE`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS watch_sync_packs TEXT DEFAULT '[]'`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS google_name TEXT DEFAULT ''`,
+    `ALTER TABLE packs DROP COLUMN IF EXISTS token`,
+  ]
+  for (const sql of migrations) {
+    await pool.query(sql).catch(err => console.error('Migration warning:', sql, err.message))
+  }
 }
