@@ -58,9 +58,13 @@ app.get('/api/words/:id', optionalAuth, async (req: AuthenticatedRequest, res: R
   try {
     const { id } = req.params
     const pack = await pool.query(`
-      SELECT p.id, p.name, p.updated_at, p.question_lang, p.answer_lang, p.download_count, u.display_name AS author
+      SELECT p.id, p.name, p.updated_at, p.question_lang, p.answer_lang, p.download_count, p.tags, p.verification_status,
+        u.display_name AS author,
+        COALESCE(AVG(pr.rating), 0) AS avg_rating, COUNT(DISTINCT pr.id)::int AS rating_count
       FROM packs p LEFT JOIN users u ON u.id = p.user_id
+      LEFT JOIN pack_ratings pr ON pr.pack_id = p.id
       WHERE p.id = $1
+      GROUP BY p.id, u.display_name
     `, [id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
 
@@ -83,7 +87,7 @@ app.get('/api/words/:id', optionalAuth, async (req: AuthenticatedRequest, res: R
       [packId]
     )
     const p = pack.rows[0]
-    res.json({ name: p.name, updated_at: p.updated_at, question_lang: p.question_lang || '', answer_lang: p.answer_lang || '', author: p.author || '', download_count: downloadCount, words: words.rows })
+    res.json({ name: p.name, updated_at: p.updated_at, question_lang: p.question_lang || '', answer_lang: p.answer_lang || '', author: p.author || '', download_count: downloadCount, tags: p.tags || '', verification_status: p.verification_status || 'none', avg_rating: parseFloat(p.avg_rating) || 0, rating_count: p.rating_count || 0, words: words.rows })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
