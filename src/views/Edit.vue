@@ -65,6 +65,18 @@
           <div :class="{ 'opacity-40 pointer-events-none': !word.enabled }">
             <AudioRecorder v-model="word.audio" @remove="removeAudio(i)" @error="e => error = e" />
           </div>
+          <div :class="{ 'opacity-40 pointer-events-none': !word.enabled }">
+            <div v-if="word.image" class="flex items-center gap-3">
+              <img :src="'/api/images/' + word.image" class="max-h-20 rounded" loading="lazy" />
+              <button type="button" @click="removeImage(i)"
+                class="text-danger hover:text-red-300 text-xs transition-colors">Remove image</button>
+            </div>
+            <label v-else
+              class="flex items-center gap-2 text-xs text-text-muted hover:text-primary cursor-pointer transition-colors">
+              <span>+ Add image</span>
+              <input type="file" accept="image/*" class="hidden" @change="e => uploadImage(e, i)" />
+            </label>
+          </div>
         </div>
 
         <button type="button" @click="addWord"
@@ -119,12 +131,17 @@ interface Word {
   reading: string
   enabled: boolean
   audio: string
+  image: string
 }
 
 const route = useRoute()
 const packId = ref('')
 const authToken = localStorage.getItem('admin_token') || ''
 const name = ref('')
+const isPublic = ref(false)
+const tags = ref('')
+const questionLang = ref('')
+const answerLang = ref('')
 const words = ref<Word[]>([])
 const loaded = ref(false)
 const loading = ref(false)
@@ -162,6 +179,10 @@ async function loadPack() {
     if (!res.ok) throw new Error('Pack not found')
     const data = await res.json()
     name.value = data.name || ''
+    isPublic.value = data.is_public || false
+    tags.value = data.tags || ''
+    questionLang.value = data.question_lang || ''
+    answerLang.value = data.answer_lang || ''
     words.value = data.words
     loaded.value = true
   } catch (e: any) {
@@ -175,7 +196,7 @@ function doImport() {
   const lines = importText.value.split('\n').filter(l => l.trim())
   const parsed = lines.map(line => {
     const [question, answer, reading] = line.split('|').map(s => s.trim())
-    return { question: question || '', answer: answer || '', reading: reading || '', enabled: true, audio: '' }
+    return { question: question || '', answer: answer || '', reading: reading || '', enabled: true, audio: '', image: '' }
   }).filter(w => w.question && w.answer)
   if (parsed.length === 0) return
   words.value.push(...parsed)
@@ -184,7 +205,40 @@ function doImport() {
 }
 
 function addWord() {
-  words.value.push({ question: '', answer: '', reading: '', enabled: true, audio: '' })
+  words.value.push({ question: '', answer: '', reading: '', enabled: true, audio: '', image: '' })
+}
+
+async function uploadImage(event: Event, i: number) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = async () => {
+    try {
+      const uploadHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (authToken) uploadHeaders['Authorization'] = `Bearer ${authToken}`
+      const res = await fetch('/api/images', {
+        method: 'POST',
+        headers: uploadHeaders,
+        body: JSON.stringify({ data: reader.result })
+      })
+      if (!res.ok) throw new Error('Upload failed')
+      const data = await res.json()
+      words.value[i].image = data.filename
+    } catch (e: any) {
+      error.value = e.message
+    }
+  }
+  reader.readAsDataURL(file)
+}
+
+async function removeImage(i: number) {
+  const filename = words.value[i].image
+  if (filename) {
+    const imgHeaders: Record<string, string> = {}
+    if (authToken) imgHeaders['Authorization'] = `Bearer ${authToken}`
+    await fetch(`/api/images/${filename}`, { method: 'DELETE', headers: imgHeaders })
+    words.value[i].image = ''
+  }
 }
 
 function removeWord(i: number) {
@@ -194,6 +248,10 @@ function removeWord(i: number) {
 function reset() {
   loaded.value = false
   name.value = ''
+  isPublic.value = false
+  tags.value = ''
+  questionLang.value = ''
+  answerLang.value = ''
   words.value = []
   error.value = ''
   saved.value = false
@@ -210,7 +268,7 @@ async function savePack() {
     const res = await fetch(`/api/packs/${packId.value}`, {
       method: 'PUT',
       headers: saveHeaders,
-      body: JSON.stringify({ name: name.value, words: words.value }),
+      body: JSON.stringify({ name: name.value, words: words.value, is_public: isPublic.value, tags: tags.value, question_lang: questionLang.value, answer_lang: answerLang.value }),
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))

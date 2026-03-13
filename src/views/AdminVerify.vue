@@ -101,7 +101,7 @@
             </div>
           </div>
           <div class="flex gap-2 flex-shrink-0">
-            <router-link :to="'/edit/' + pack.id"
+            <router-link :to="'/admin/edit/' + pack.id"
               class="px-3 py-1 text-xs font-semibold rounded-lg transition-colors bg-blue-600 hover:bg-blue-700 text-white">
               Edit
             </router-link>

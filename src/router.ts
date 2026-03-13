@@ -7,7 +7,7 @@ const routes = [
   { path: '/', redirect: '/privacy' },
   { path: '/privacy', component: Privacy },
   { path: '/admin', component: AdminVerify },
-  { path: '/edit/:id', component: EditView },
+  { path: '/admin/edit/:id', component: EditView },
 ]
 
 export default createRouter({
