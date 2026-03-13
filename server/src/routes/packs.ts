@@ -118,8 +118,11 @@ router.get('/:id/edit', authenticateToken, async (req: AuthenticatedRequest, res
     const pack = await pool.query('SELECT id, name, is_public, verification_status, tags, question_lang, answer_lang, updated_at, user_id FROM packs WHERE id = $1', [id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id && pack.rows[0].user_id !== req.user!.userId) {
-      const collab = await pool.query('SELECT 1 FROM pack_collaborators pc WHERE pc.pack_id = $1 AND pc.user_id = $2', [id, req.user!.userId])
-      if (collab.rows.length === 0) return res.status(403).json({ error: 'Not your pack' })
+      const adminCheck = await pool.query('SELECT is_admin FROM users WHERE id = $1', [req.user!.userId])
+      if (!adminCheck.rows[0]?.is_admin) {
+        const collab = await pool.query('SELECT 1 FROM pack_collaborators pc WHERE pc.pack_id = $1 AND pc.user_id = $2', [id, req.user!.userId])
+        if (collab.rows.length === 0) return res.status(403).json({ error: 'Not your pack' })
+      }
     }
 
     const words = await pool.query(
@@ -181,8 +184,11 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
     const pack = await client.query('SELECT id, user_id, is_public, verification_status FROM packs WHERE id = $1', [id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id && pack.rows[0].user_id !== req.user!.userId) {
-      const collab = await client.query('SELECT 1 FROM pack_collaborators pc WHERE pc.pack_id = $1 AND pc.user_id = $2', [id, req.user!.userId])
-      if (collab.rows.length === 0) return res.status(403).json({ error: 'Not your pack' })
+      const adminCheck = await client.query('SELECT is_admin FROM users WHERE id = $1', [req.user!.userId])
+      if (!adminCheck.rows[0]?.is_admin) {
+        const collab = await client.query('SELECT 1 FROM pack_collaborators pc WHERE pc.pack_id = $1 AND pc.user_id = $2', [id, req.user!.userId])
+        if (collab.rows.length === 0) return res.status(403).json({ error: 'Not your pack' })
+      }
     }
 
     const packId = pack.rows[0].id

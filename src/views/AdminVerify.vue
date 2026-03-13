@@ -101,6 +101,10 @@
             </div>
           </div>
           <div class="flex gap-2 flex-shrink-0">
+            <router-link :to="'/edit/' + pack.id"
+              class="px-3 py-1 text-xs font-semibold rounded-lg transition-colors bg-blue-600 hover:bg-blue-700 text-white">
+              Edit
+            </router-link>
             <button @click="setStatus(pack.id, 'accepted')"
               class="px-3 py-1 text-xs font-semibold rounded-lg transition-colors"
               :class="pack.verification_status === 'accepted' ? 'bg-green-900 text-green-400 cursor-default' : 'bg-green-600 hover:bg-green-700 text-white'"
