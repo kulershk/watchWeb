@@ -144,7 +144,7 @@ router.post('/google', async (req: AuthenticatedRequest, res: Response) => {
 // GET /api/auth/me
 router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const result = await pool.query('SELECT id, email, display_name, friend_code FROM users WHERE id = $1', [req.user!.userId])
+    const result = await pool.query('SELECT id, email, display_name, friend_code, is_admin FROM users WHERE id = $1', [req.user!.userId])
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' })
     const user = result.rows[0]
     if (!user.friend_code) {
@@ -152,7 +152,7 @@ router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Resp
       await pool.query('UPDATE users SET friend_code = $1 WHERE id = $2', [friendCode, user.id])
       user.friend_code = friendCode
     }
-    res.json({ id: user.id, email: user.email, displayName: user.display_name, friendCode: user.friend_code })
+    res.json({ id: user.id, email: user.email, displayName: user.display_name, friendCode: user.friend_code, isAdmin: user.is_admin || false })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })

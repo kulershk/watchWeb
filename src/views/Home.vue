@@ -12,7 +12,7 @@
       <div class="bg-surface rounded-lg p-5 border border-border">
         <div class="text-2xl mb-2">1.</div>
         <h3 class="font-semibold mb-1">Create a Pack</h3>
-        <p class="text-sm text-text-muted">Add words with questions, answers, and optional readings.</p>
+        <p class="text-sm text-text-muted">Add words with cards, explanations, and optional hints.</p>
       </div>
       <div class="bg-surface rounded-lg p-5 border border-border">
         <div class="text-2xl mb-2">2.</div>
@@ -30,9 +30,9 @@
       <h2 class="font-semibold mb-3">Word Pack Format</h2>
       <p class="text-sm text-text-muted mb-3">Each word has three fields:</p>
       <ul class="text-sm text-text-muted space-y-1">
-        <li><span class="text-primary font-medium">question</span> — shown on screen (what you're quizzed on)</li>
-        <li><span class="text-primary font-medium">answer</span> — revealed when you tap "Show Answer"</li>
-        <li><span class="text-primary font-medium">reading</span> — optional hint shown under the question</li>
+        <li><span class="text-primary font-medium">card</span> — shown on screen (what you're quizzed on)</li>
+        <li><span class="text-primary font-medium">explanation</span> — revealed when you tap "Show Answer"</li>
+        <li><span class="text-primary font-medium">hint</span> — optional hint shown under the card</li>
       </ul>
     </div>
 

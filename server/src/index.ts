@@ -3,7 +3,7 @@ import cors from 'cors'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { existsSync } from 'fs'
-import { PORT } from './config.js'
+import { PORT, GOOGLE_CLIENT_ID } from './config.js'
 import { pool, initDb } from './db.js'
 import { optionalAuth, AuthenticatedRequest } from './middleware/auth.js'
 import authRoutes from './routes/auth.js'
@@ -34,6 +34,11 @@ app.use('/api', collaboratorsRoutes)
 app.use('/api/watch', watchRoutes)
 app.use('/api/audio', audioRoutes)
 app.use('/api/images', imageRoutes)
+
+// GET /api/config — public frontend config
+app.get('/api/config', (_req, res) => {
+  res.json({ googleClientId: GOOGLE_CLIENT_ID || null })
+})
 
 // GET /api/version — returns latest app versions for update checks
 app.get('/api/version', async (_req, res) => {

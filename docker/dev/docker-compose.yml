@@ -7,6 +7,8 @@ services:
     ports:
       - "5173:5173"
       - "3001:3001"
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://watch:watch@watch-dev-db:5432/watch
     volumes:

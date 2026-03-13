@@ -13,7 +13,7 @@ const router = Router()
 router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query(`
-      SELECT p.id, p.name, p.is_public, p.tags, p.question_lang, p.answer_lang, p.download_count, p.created_at, p.updated_at, COUNT(w.id)::int AS word_count,
+      SELECT p.id, p.name, p.is_public, p.tags, p.question_lang, p.answer_lang, p.download_count, p.verification_status, p.created_at, p.updated_at, COUNT(w.id)::int AS word_count,
         CASE WHEN p.user_id = $1 THEN true ELSE false END AS is_owner
       FROM packs p
       LEFT JOIN words w ON w.pack_id = p.id
@@ -33,16 +33,21 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
 router.get('/browse', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { tag, search } = req.query
+    const verifiedOnly = req.query.verified_only !== 'false'
     let query = `
-      SELECT p.id, p.name, p.tags, p.question_lang, p.answer_lang, p.download_count, p.updated_at, u.display_name AS author, COUNT(w.id)::int AS word_count,
+      SELECT p.id, p.name, p.tags, p.question_lang, p.answer_lang, p.download_count, p.verification_status, p.updated_at, u.display_name AS author, COUNT(w.id)::int AS word_count,
         COALESCE(AVG(pr.rating), 0) AS avg_rating, COUNT(DISTINCT pr.id)::int AS rating_count
       FROM packs p
       LEFT JOIN words w ON w.pack_id = p.id
       LEFT JOIN users u ON u.id = p.user_id
       LEFT JOIN pack_ratings pr ON pr.pack_id = p.id
-      WHERE p.is_public = true
+      WHERE p.is_public = true AND p.verification_status != 'denied'
     `
     const params: any[] = []
+
+    if (verifiedOnly) {
+      query += ` AND p.verification_status = 'accepted'`
+    }
 
     if (tag) {
       params.push(`%${tag}%`)
@@ -71,11 +76,46 @@ router.get('/browse', async (req: AuthenticatedRequest, res: Response) => {
   }
 })
 
+// GET /api/packs/admin/pending — admin: list packs by verification status
+router.get('/admin/pending', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await pool.query('SELECT is_admin FROM users WHERE id = $1', [req.user!.userId])
+    if (!user.rows[0]?.is_admin) return res.status(403).json({ error: 'Admin access required' })
+
+    const statusFilter = (req.query.status as string) || 'pending'
+    const validStatuses = ['none', 'pending', 'accepted', 'denied', 'neutral']
+    if (!validStatuses.includes(statusFilter) && statusFilter !== 'all') {
+      return res.status(400).json({ error: 'Invalid status filter' })
+    }
+
+    let query = `
+      SELECT p.id, p.name, p.is_public, p.verification_status, p.tags, p.question_lang, p.answer_lang, p.download_count, p.updated_at,
+        u.display_name AS author, COUNT(w.id)::int AS word_count
+      FROM packs p
+      LEFT JOIN words w ON w.pack_id = p.id
+      LEFT JOIN users u ON u.id = p.user_id
+      WHERE p.is_public = true
+    `
+    const params: any[] = []
+    if (statusFilter !== 'all') {
+      params.push(statusFilter)
+      query += ` AND p.verification_status = $${params.length}`
+    }
+    query += ` GROUP BY p.id, u.display_name ORDER BY p.updated_at DESC`
+
+    const result = await pool.query(query, params)
+    res.json(result.rows)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // GET /api/packs/:id/edit — all words including disabled
 router.get('/:id/edit', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params
-    const pack = await pool.query('SELECT id, name, is_public, tags, question_lang, answer_lang, updated_at, user_id FROM packs WHERE id = $1', [id])
+    const pack = await pool.query('SELECT id, name, is_public, verification_status, tags, question_lang, answer_lang, updated_at, user_id FROM packs WHERE id = $1', [id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id && pack.rows[0].user_id !== req.user!.userId) {
       const collab = await pool.query('SELECT 1 FROM pack_collaborators pc WHERE pc.pack_id = $1 AND pc.user_id = $2', [id, req.user!.userId])
@@ -86,7 +126,7 @@ router.get('/:id/edit', authenticateToken, async (req: AuthenticatedRequest, res
       'SELECT question, answer, reading, enabled, audio, image FROM words WHERE pack_id = $1 ORDER BY id',
       [pack.rows[0].id]
     )
-    res.json({ name: pack.rows[0].name, is_public: pack.rows[0].is_public, tags: pack.rows[0].tags || '', question_lang: pack.rows[0].question_lang || '', answer_lang: pack.rows[0].answer_lang || '', updated_at: pack.rows[0].updated_at, words: words.rows })
+    res.json({ name: pack.rows[0].name, is_public: pack.rows[0].is_public, verification_status: pack.rows[0].verification_status || 'none', tags: pack.rows[0].tags || '', question_lang: pack.rows[0].question_lang || '', answer_lang: pack.rows[0].answer_lang || '', updated_at: pack.rows[0].updated_at, words: words.rows })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
@@ -103,9 +143,10 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
     }
 
     await client.query('BEGIN')
+    const verificationStatus = is_public ? 'pending' : 'none'
     const pack = await client.query(
-      'INSERT INTO packs (name, user_id, is_public, tags, question_lang, answer_lang) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-      [name || '', req.user!.userId, is_public || false, tags || '', question_lang || '', answer_lang || '']
+      'INSERT INTO packs (name, user_id, is_public, tags, question_lang, answer_lang, verification_status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      [name || '', req.user!.userId, is_public || false, tags || '', question_lang || '', answer_lang || '', verificationStatus]
     )
     const packId = pack.rows[0].id
 
@@ -137,7 +178,7 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
       return res.status(400).json({ error: 'Words array is required' })
     }
 
-    const pack = await client.query('SELECT id, user_id FROM packs WHERE id = $1', [id])
+    const pack = await client.query('SELECT id, user_id, is_public, verification_status FROM packs WHERE id = $1', [id])
     if (pack.rows.length === 0) return res.status(404).json({ error: 'Pack not found' })
     if (pack.rows[0].user_id && pack.rows[0].user_id !== req.user!.userId) {
       const collab = await client.query('SELECT 1 FROM pack_collaborators pc WHERE pc.pack_id = $1 AND pc.user_id = $2', [id, req.user!.userId])
@@ -145,8 +186,23 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
     }
 
     const packId = pack.rows[0].id
+    const wasPublic = pack.rows[0].is_public
+    const newIsPublic = is_public || false
+
+    // Determine verification_status
+    let verificationStatus = pack.rows[0].verification_status || 'none'
+    if (newIsPublic && !wasPublic) {
+      // Going from private to public
+      verificationStatus = 'pending'
+    } else if (newIsPublic && wasPublic) {
+      // Already public, any edit resets to pending
+      verificationStatus = 'pending'
+    } else if (!newIsPublic) {
+      verificationStatus = 'none'
+    }
+
     await client.query('BEGIN')
-    await client.query('UPDATE packs SET name = $1, is_public = $2, tags = $3, question_lang = $4, answer_lang = $5, updated_at = NOW() WHERE id = $6', [name || '', is_public || false, tags || '', question_lang || '', answer_lang || '', packId])
+    await client.query('UPDATE packs SET name = $1, is_public = $2, tags = $3, question_lang = $4, answer_lang = $5, verification_status = $6, updated_at = NOW() WHERE id = $7', [name || '', newIsPublic, tags || '', question_lang || '', answer_lang || '', verificationStatus, packId])
 
     // Find old audio/image files to clean up
     const oldWords = await client.query('SELECT audio, image FROM words WHERE pack_id = $1', [packId])
@@ -270,6 +326,25 @@ router.get('/share/:code', optionalAuth, async (req: AuthenticatedRequest, res: 
       download_count: row.download_count || 0,
       words: words.rows
     })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PUT /api/packs/:id/verify — admin-only: set verification status
+router.put('/:id/verify', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await pool.query('SELECT is_admin FROM users WHERE id = $1', [req.user!.userId])
+    if (!user.rows[0]?.is_admin) return res.status(403).json({ error: 'Admin access required' })
+
+    const { status } = req.body
+    const validStatuses = ['none', 'pending', 'accepted', 'denied', 'neutral']
+    if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' })
+
+    const { id } = req.params
+    await pool.query('UPDATE packs SET verification_status = $1 WHERE id = $2', [status, id])
+    res.json({ ok: true })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })

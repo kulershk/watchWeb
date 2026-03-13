@@ -64,6 +64,7 @@ export const swaggerSpec = {
           name: { type: 'string' },
           word_count: { type: 'integer' },
           is_public: { type: 'boolean' },
+          verification_status: { type: 'string', enum: ['none', 'pending', 'accepted', 'denied', 'neutral'], description: 'Pack verification status' },
           tags: { type: 'string' },
           question_lang: { type: 'string' },
           answer_lang: { type: 'string' },
@@ -83,6 +84,7 @@ export const swaggerSpec = {
           question_lang: { type: 'string' },
           answer_lang: { type: 'string' },
           download_count: { type: 'integer' },
+          verification_status: { type: 'string', enum: ['none', 'pending', 'accepted', 'denied', 'neutral'] },
           updated_at: { type: 'string', format: 'date-time' },
           author: { type: 'string' },
           avg_rating: { type: 'number' },
@@ -283,11 +285,13 @@ export const swaggerSpec = {
       get: {
         tags: ['Packs'],
         summary: 'Browse public packs',
+        description: 'By default returns only verified (accepted) packs. Set verified_only=false to include all public packs except denied ones.',
         parameters: [
           { name: 'search', in: 'query', schema: { type: 'string' }, description: 'Search by name' },
           { name: 'tag', in: 'query', schema: { type: 'string' }, description: 'Filter by tag' },
           { name: 'question_lang', in: 'query', schema: { type: 'string' }, description: 'Filter by question language' },
-          { name: 'answer_lang', in: 'query', schema: { type: 'string' }, description: 'Filter by answer language' }
+          { name: 'answer_lang', in: 'query', schema: { type: 'string' }, description: 'Filter by answer language' },
+          { name: 'verified_only', in: 'query', schema: { type: 'string', enum: ['true', 'false'], default: 'true' }, description: 'true = only accepted packs, false = all public except denied' }
         ],
         responses: {
           '200': {
@@ -356,6 +360,7 @@ export const swaggerSpec = {
                   properties: {
                     name: { type: 'string' },
                     is_public: { type: 'boolean' },
+                    verification_status: { type: 'string', enum: ['none', 'pending', 'accepted', 'denied', 'neutral'] },
                     tags: { type: 'string' },
                     question_lang: { type: 'string' },
                     answer_lang: { type: 'string' },
@@ -367,6 +372,52 @@ export const swaggerSpec = {
             }
           },
           '404': { description: 'Pack not found' }
+        }
+      }
+    },
+
+    // ==================== ADMIN VERIFICATION ====================
+    '/api/packs/admin/pending': {
+      get: {
+        tags: ['Admin'],
+        summary: 'List public packs filtered by verification status',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'accepted', 'denied', 'neutral', 'all'], default: 'pending' }, description: 'Filter by verification status, or "all" for all public packs' }
+        ],
+        responses: {
+          '200': {
+            description: 'Packs list',
+            content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/PublicPack' } } } }
+          },
+          '403': { description: 'Admin access required', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } }
+        }
+      }
+    },
+    '/api/packs/{id}/verify': {
+      put: {
+        tags: ['Admin'],
+        summary: 'Set verification status for a pack (admin only)',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['status'],
+                properties: {
+                  status: { type: 'string', enum: ['none', 'pending', 'accepted', 'denied', 'neutral'], description: 'New verification status' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          '200': { description: 'Updated', content: { 'application/json': { schema: { type: 'object', properties: { ok: { type: 'boolean' } } } } } },
+          '400': { description: 'Invalid status', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          '403': { description: 'Admin access required', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } }
         }
       }
     },
@@ -758,6 +809,7 @@ export const swaggerSpec = {
   tags: [
     { name: 'Auth', description: 'Registration, login, and user profile' },
     { name: 'Packs', description: 'Word pack CRUD and browsing' },
+    { name: 'Admin', description: 'Admin-only pack verification and moderation' },
     { name: 'Ratings', description: 'Pack ratings (1-5 stars)' },
     { name: 'Collaborators', description: 'Pack sharing via friend codes' },
     { name: 'Watch Sync', description: 'Phone-to-watch pairing and pack sync' },

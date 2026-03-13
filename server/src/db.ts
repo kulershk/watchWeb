@@ -90,6 +90,9 @@ export async function initDb() {
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS watch_sync_packs TEXT DEFAULT '[]'`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS google_name TEXT DEFAULT ''`,
     `ALTER TABLE packs DROP COLUMN IF EXISTS token`,
+    `ALTER TABLE packs ADD COLUMN IF NOT EXISTS verification_status VARCHAR(10) DEFAULT 'none'`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE`,
+    `UPDATE packs SET verification_status = 'neutral' WHERE is_public = true AND verification_status = 'none'`,
   ]
   for (const sql of migrations) {
     await pool.query(sql).catch(err => console.error('Migration warning:', sql, err.message))

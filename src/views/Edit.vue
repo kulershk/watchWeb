@@ -47,17 +47,17 @@
           </div>
           <div class="grid gap-3 sm:grid-cols-3" :class="{ 'opacity-40 pointer-events-none': !word.enabled }">
             <div>
-              <label class="text-xs text-text-muted block mb-1">Question</label>
+              <label class="text-xs text-text-muted block mb-1">Card</label>
               <input v-model="word.question" :required="word.enabled"
                 class="w-full bg-bg border border-border rounded px-3 py-2 text-text focus:border-primary transition-colors" />
             </div>
             <div>
-              <label class="text-xs text-text-muted block mb-1">Answer</label>
+              <label class="text-xs text-text-muted block mb-1">Explanation</label>
               <input v-model="word.answer" :required="word.enabled"
                 class="w-full bg-bg border border-border rounded px-3 py-2 text-text focus:border-primary transition-colors" />
             </div>
             <div>
-              <label class="text-xs text-text-muted block mb-1">Reading</label>
+              <label class="text-xs text-text-muted block mb-1">Hint</label>
               <input v-model="word.reading"
                 class="w-full bg-bg border border-border rounded px-3 py-2 text-text focus:border-primary transition-colors" />
             </div>
@@ -75,7 +75,7 @@
         <!-- Import -->
         <div class="bg-surface rounded-lg p-4 border border-border space-y-2">
           <div class="flex items-center justify-between">
-            <label class="text-xs text-text-muted">Import (question|answer|reading per line)</label>
+            <label class="text-xs text-text-muted">Import (card|explanation|hint per line)</label>
             <button type="button" @click="showImport = !showImport" class="text-xs text-primary hover:text-primary-hover transition-colors">
               {{ showImport ? 'Hide' : 'Show' }}
             </button>
