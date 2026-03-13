@@ -28,10 +28,34 @@
       </div>
 
       <form @submit.prevent="savePack" class="space-y-4">
-        <div class="bg-surface rounded-lg p-4 border border-border">
-          <label class="text-xs text-text-muted block mb-1">Pack Name</label>
-          <input v-model="name" required
-            class="w-full bg-bg border border-border rounded px-3 py-2 text-text focus:border-primary transition-colors" />
+        <div class="bg-surface rounded-lg p-4 border border-border space-y-3">
+          <div>
+            <label class="text-xs text-text-muted block mb-1">Pack Name</label>
+            <input v-model="name" required
+              class="w-full bg-bg border border-border rounded px-3 py-2 text-text focus:border-primary transition-colors" />
+          </div>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label class="text-xs text-text-muted block mb-1">Question Language</label>
+              <input v-model="questionLang" placeholder="e.g. Japanese"
+                class="w-full bg-bg border border-border rounded px-3 py-2 text-text text-sm focus:border-primary transition-colors" />
+            </div>
+            <div>
+              <label class="text-xs text-text-muted block mb-1">Answer Language</label>
+              <input v-model="answerLang" placeholder="e.g. English"
+                class="w-full bg-bg border border-border rounded px-3 py-2 text-text text-sm focus:border-primary transition-colors" />
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-text-muted block mb-1">Tags</label>
+            <input v-model="tags" placeholder="e.g. JLPT N5, vocabulary, beginner"
+              class="w-full bg-bg border border-border rounded px-3 py-2 text-text text-sm focus:border-primary transition-colors" />
+          </div>
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" v-model="isPublic" class="w-4 h-4 accent-primary rounded" />
+            <span class="text-sm text-text">Public</span>
+            <span class="text-xs text-text-muted">(visible in browse)</span>
+          </label>
         </div>
 
         <div v-for="(word, i) in words" :key="i"
