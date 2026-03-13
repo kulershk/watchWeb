@@ -123,6 +123,7 @@ interface Word {
 
 const route = useRoute()
 const packId = ref('')
+const authToken = localStorage.getItem('admin_token') || ''
 const name = ref('')
 const words = ref<Word[]>([])
 const loaded = ref(false)
@@ -136,7 +137,9 @@ const importText = ref('')
 async function removeAudio(i: number) {
   const filename = words.value[i].audio
   if (filename) {
-    await fetch(`/api/audio/${filename}`, { method: 'DELETE' })
+    const audioHeaders: Record<string, string> = {}
+    if (authToken) audioHeaders['Authorization'] = `Bearer ${authToken}`
+    await fetch(`/api/audio/${filename}`, { method: 'DELETE', headers: audioHeaders })
     words.value[i].audio = ''
   }
 }
@@ -153,7 +156,9 @@ async function loadPack() {
   error.value = ''
   loading.value = true
   try {
-    const res = await fetch(`/api/packs/${packId.value}/edit`)
+    const headers: Record<string, string> = {}
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`
+    const res = await fetch(`/api/packs/${packId.value}/edit`, { headers })
     if (!res.ok) throw new Error('Pack not found')
     const data = await res.json()
     name.value = data.name || ''
@@ -200,9 +205,11 @@ async function savePack() {
   saved.value = false
   saving.value = true
   try {
+    const saveHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (authToken) saveHeaders['Authorization'] = `Bearer ${authToken}`
     const res = await fetch(`/api/packs/${packId.value}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: saveHeaders,
       body: JSON.stringify({ name: name.value, words: words.value }),
     })
     if (!res.ok) {
@@ -220,7 +227,9 @@ async function savePack() {
 async function confirmDelete() {
   if (!confirm('Delete this word pack? This cannot be undone.')) return
   try {
-    const res = await fetch(`/api/packs/${packId.value}`, { method: 'DELETE' })
+    const delHeaders: Record<string, string> = {}
+    if (authToken) delHeaders['Authorization'] = `Bearer ${authToken}`
+    const res = await fetch(`/api/packs/${packId.value}`, { method: 'DELETE', headers: delHeaders })
     if (!res.ok) throw new Error('Failed to delete')
     reset()
   } catch (e: any) {
